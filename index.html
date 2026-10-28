@@ -1,0 +1,867 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<title>Shared Notebook</title>
+<link rel="stylesheet" href="fonts.css">
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/purify.min.js"></script>
+<style>
+/* ── tokens: light (same palette as the matter board) ─────────── */
+:root{
+  color-scheme:light dark;
+  --page:#f2ecec; --surface:#fff; --surface-alt:#faf7f7; --sunken:#e8dedf;
+  --ink:#283f3b; --ink-2:#6e6669; --ink-3:#938a8c;
+  --line:#e2c2c6; --line-strong:#c9a5aa; --line-subtle:#f0e6e8;
+  --primary:#7e4e60; --primary-deep:#5e3848; --primary-wash:#f6edef; --on-primary:#ffffff;
+  --accent:#2b8fa8; --accent-wash:#eaf7fb;
+  --sage:#4e7a44; --sage-wash:#eff5ed;
+  --warn:#a35c05; --warn-wash:#fdf3e6;
+  --crit:#a3231c; --crit-wash:#fbecea;
+  --chrome:#283f3b;
+  --shadow:0 1px 2px rgba(40,63,59,.08), 0 8px 24px -12px rgba(40,63,59,.28);
+  --sans:"Public Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+/* ── tokens: dark ──────────────────────────────────────────────── */
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --page:#1a1a2e; --surface:#252540; --surface-alt:#2d2d4a; --sunken:#141426;
+  --ink:#e8e8f0; --ink-2:#a0a0b8; --ink-3:#8888a0;
+  --line:#3d3d5c; --line-strong:#5d5d7c; --line-subtle:#2d2d4a;
+  --primary:#d9a3b0; --primary-deep:#e2c2c6; --primary-wash:#2e2238; --on-primary:#1a1a2e;
+  --accent:#90e0f3; --accent-wash:#1a2a2e;
+  --sage:#9ec392; --sage-wash:#1a2e1a;
+  --warn:#e8b45c; --warn-wash:#2e2a1a;
+  --crit:#f0918a; --crit-wash:#2e1a1a;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 8px 24px -12px rgba(0,0,0,.75);
+}}
+:root[data-theme="light"]{color-scheme:light}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --page:#1a1a2e; --surface:#252540; --surface-alt:#2d2d4a; --sunken:#141426;
+  --ink:#e8e8f0; --ink-2:#a0a0b8; --ink-3:#8888a0;
+  --line:#3d3d5c; --line-strong:#5d5d7c; --line-subtle:#2d2d4a;
+  --primary:#d9a3b0; --primary-deep:#e2c2c6; --primary-wash:#2e2238; --on-primary:#1a1a2e;
+  --accent:#90e0f3; --accent-wash:#1a2a2e;
+  --sage:#9ec392; --sage-wash:#1a2e1a;
+  --warn:#e8b45c; --warn-wash:#2e2a1a;
+  --crit:#f0918a; --crit-wash:#2e1a1a;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 8px 24px -12px rgba(0,0,0,.75);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--page);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+[hidden]{display:none!important}
+.app{height:100%;display:flex;flex-direction:column;min-height:0}
+
+/* ── top bar ───────────────────────────────────────────────────── */
+.topbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top,0px));
+  background:var(--chrome);color:#e8efec;border-bottom:1px solid #3b524d}
+.brand{display:flex;align-items:baseline;gap:9px;margin-right:auto;text-decoration:none;color:inherit}
+.brand b{font-family:var(--serif);font-size:19px;font-weight:600;letter-spacing:.01em}
+.brand span{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#8fa8a1}
+.conn{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#cbd8d4;
+  border:1px solid #4a635d;border-radius:999px;padding:2px 8px;white-space:nowrap}
+.conn.err{color:#f6b8b2;border-color:#8a4a45}
+.gsearch{position:relative;flex:1 1 240px;max-width:380px}
+.gsearch input{width:100%;background:rgba(255,255,255,.07);border:1px solid #47605a;color:#eef3f1;
+  border-radius:4px;padding:6px 10px 6px 30px;font-size:13px}
+.gsearch input::placeholder{color:#8ba49d}
+.gsearch svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#8ba49d}
+.tbtn{background:rgba(255,255,255,.07);border:1px solid #47605a;color:#cfdcd8;border-radius:4px;
+  padding:6px 10px;font-size:12px;cursor:pointer}
+.tbtn:hover{background:rgba(255,255,255,.14)}
+
+/* ── shared bits ───────────────────────────────────────────────── */
+.btn{background:var(--surface);border:1px solid var(--line-strong);border-radius:4px;padding:5px 12px;
+  font-size:13px;cursor:pointer;color:var(--ink)}
+.btn:hover{background:var(--surface-alt)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.btn.primary:hover{background:var(--primary-deep)}
+.btn.danger{color:var(--crit)}
+.btn:disabled{opacity:.5;cursor:default}
+.muted{color:var(--ink-2)}
+.banner{margin:12px 16px 0;padding:8px 12px;border-radius:4px;font-size:13px;border:1px solid}
+.banner.err{background:var(--crit-wash);border-color:var(--crit);color:var(--crit)}
+.banner.warn{background:var(--warn-wash);border-color:var(--warn);color:var(--warn)}
+.banner.ok{background:var(--sage-wash);border-color:var(--sage);color:var(--sage)}
+main{flex:1;min-height:0;overflow:auto}
+
+/* ── board ─────────────────────────────────────────────────────── */
+.board{padding:20px 16px 40px;max-width:1280px;margin:0 auto}
+.board h2{font-family:var(--serif);font-weight:600;font-size:15px;margin:0 0 12px;color:var(--ink-2)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
+.tile{position:relative;display:flex;flex-direction:column;gap:6px;min-height:150px;padding:14px 14px 12px;
+  background:var(--surface);border:1px solid var(--line);border-radius:6px;box-shadow:var(--shadow);
+  text-decoration:none;color:inherit;overflow:hidden}
+.tile::before{content:"";position:absolute;inset:0 0 auto 0;height:4px;background:var(--hue)}
+.tile:hover{border-color:var(--line-strong)}
+.tile h3{margin:2px 0 0;font-family:var(--serif);font-size:18px;font-weight:600;line-height:1.2}
+.tile .count{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.tile ul{margin:auto 0 0;padding:0;list-style:none;font-size:12.5px;color:var(--ink-2)}
+.tile li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile.new{align-items:center;justify-content:center;border-style:dashed;box-shadow:none;background:transparent;
+  color:var(--ink-2);cursor:pointer;font-size:14px}
+.tile.new::before{display:none}
+.tile.new:hover{color:var(--primary);border-color:var(--primary)}
+.tile.new span{font-size:30px;line-height:1;font-weight:300}
+.results{margin-top:28px}
+.result{display:block;padding:10px 12px;border:1px solid var(--line-subtle);background:var(--surface);
+  border-radius:4px;margin-bottom:8px;text-decoration:none;color:inherit}
+.result:hover{border-color:var(--line-strong)}
+.result b{font-weight:600}
+.result small{color:var(--ink-3);margin-left:6px}
+.result p{margin:4px 0 0;font-size:12.5px;color:var(--ink-2)}
+.result mark{background:var(--warn-wash);color:var(--warn);padding:0 1px}
+.empty{padding:40px 0;text-align:center;color:var(--ink-2)}
+
+/* ── subject ───────────────────────────────────────────────────── */
+.subject{display:grid;grid-template-columns:260px 1fr;height:100%;min-height:0}
+.side{border-right:1px solid var(--line);background:var(--surface-alt);overflow:auto;padding:14px 10px}
+.side h2{font-family:var(--serif);font-size:19px;font-weight:600;margin:0 6px 2px;display:flex;align-items:center;gap:8px}
+.side h2 i{width:10px;height:10px;border-radius:2px;background:var(--hue);flex:none}
+.side .back{display:inline-block;font-size:12px;color:var(--ink-2);margin:0 6px 10px;text-decoration:none}
+.side .back:hover{color:var(--primary)}
+.side .sect{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:14px 6px 4px}
+.side a.note{display:block;padding:5px 8px;border-radius:4px;color:var(--ink);text-decoration:none;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13.5px}
+.side a.note:hover{background:var(--sunken)}
+.side a.note.on{background:var(--primary-wash);color:var(--primary);font-weight:600}
+.side .add{margin:12px 6px 0;width:calc(100% - 12px)}
+.pane{min-width:0;overflow:auto;display:flex;flex-direction:column;background:var(--surface)}
+.bar{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:8px 16px;background:var(--surface);border-bottom:1px solid var(--line)}
+.bar .path{font-family:var(--mono);font-size:12px;color:var(--ink-2);margin-right:auto;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.bar .state{font-size:12px;color:var(--ink-3)}
+.bar .state.dirty{color:var(--warn)}
+.bar a{font-size:12px;color:var(--accent)}
+
+/* ── rendered markdown ─────────────────────────────────────────── */
+.md{padding:22px 28px 60px;max-width:820px;width:100%;font-family:var(--serif);font-size:16px;line-height:1.6}
+.md h1,.md h2,.md h3,.md h4{font-family:var(--sans);line-height:1.25;margin:1.4em 0 .5em}
+.md h1{font-size:26px;margin-top:.2em}
+.md h2{font-size:20px;border-bottom:1px solid var(--line-subtle);padding-bottom:4px}
+.md h3{font-size:16.5px}
+.md a{color:var(--accent)}
+.md a.missing{color:var(--crit);text-decoration-style:dashed}
+.md code{font-family:var(--mono);font-size:.86em;background:var(--sunken);padding:1px 4px;border-radius:3px}
+.md pre{background:var(--sunken);padding:12px 14px;border-radius:4px;overflow:auto;font-size:14px;line-height:1.45}
+.md pre code{background:none;padding:0}
+.md blockquote{margin:1em 0;padding:2px 14px;border-left:3px solid var(--line-strong);color:var(--ink-2)}
+.md table{border-collapse:collapse;font-family:var(--sans);font-size:13.5px;display:block;overflow:auto}
+.md th,.md td{border:1px solid var(--line);padding:5px 10px;text-align:left}
+.md th{background:var(--surface-alt)}
+.md img{max-width:100%;border-radius:3px}
+.md hr{border:0;border-top:1px solid var(--line)}
+.md li:has(> input[type=checkbox]){list-style:none;margin-left:-1.3em}
+.md input[type=checkbox]{margin-right:6px;accent-color:var(--primary);cursor:pointer}
+
+/* ── editor ────────────────────────────────────────────────────── */
+.edit{display:grid;grid-template-columns:1fr 1fr;flex:1;min-height:0}
+.edit textarea{border:0;border-right:1px solid var(--line);resize:none;padding:20px 22px;
+  background:var(--surface);font-family:var(--mono);font-size:13.5px;line-height:1.6;min-height:60vh;outline:none;tab-size:2}
+.edit .md{overflow:auto}
+.hint{font-size:11.5px;color:var(--ink-3);padding:6px 16px;border-top:1px solid var(--line-subtle);background:var(--surface)}
+
+/* ── dialog ────────────────────────────────────────────────────── */
+dialog{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);color:var(--ink);
+  padding:20px;width:min(460px,calc(100vw - 32px));box-shadow:var(--shadow)}
+dialog::backdrop{background:rgba(20,20,40,.45)}
+dialog h3{margin:0 0 12px;font-family:var(--serif);font-size:19px}
+dialog label{display:block;font-size:12px;color:var(--ink-2);margin:10px 0 3px}
+dialog input,dialog select{width:100%;padding:6px 9px;border:1px solid var(--line-strong);border-radius:4px;background:var(--surface-alt)}
+dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+dialog p{font-size:12.5px;color:var(--ink-2);margin:8px 0 0}
+
+@media (max-width:760px){
+  .subject{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  .side{border-right:0;border-bottom:1px solid var(--line);max-height:34vh}
+  .edit{grid-template-columns:1fr}
+  .edit .md{display:none}
+  .md{padding:16px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <a class="brand" href="#/"><b>Notebook</b><span>shared</span></a>
+    <label class="gsearch">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Search notes — Enter searches inside them" aria-label="Search notes">
+    </label>
+    <span class="conn" id="conn">…</span>
+    <button class="tbtn" id="settingsBtn">Settings</button>
+    <button class="tbtn" id="themeBtn" aria-label="Toggle theme">◐</button>
+  </header>
+  <div id="banner"></div>
+  <main id="main"></main>
+</div>
+
+<dialog id="settings">
+  <form method="dialog" id="settingsForm">
+    <h3>Where the notes live</h3>
+    <label for="sMode">Storage</label>
+    <select id="sMode">
+      <option value="demo">Demo — this browser only, sample notes</option>
+      <option value="forgejo">Forgejo repository</option>
+    </select>
+    <div id="sForgejo">
+      <label for="sBase">Forgejo URL (blank = same origin, via proxy)</label>
+      <input id="sBase" placeholder="https://forgejo.example.net">
+      <label for="sRepo">Repository (owner/name)</label>
+      <input id="sRepo" placeholder="team/notes">
+      <label for="sBranch">Branch</label>
+      <input id="sBranch" placeholder="main">
+      <label for="sToken">Access token</label>
+      <input id="sToken" type="password" autocomplete="off">
+      <p>Needs <code>write:repository</code>. Kept in this browser's localStorage. Each save is a commit as you.</p>
+    </div>
+    <div class="row">
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" value="save">Connect</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+/* ═══ helpers ═════════════════════════════════════════════════════ */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const encPath = p => p.split("/").map(encodeURIComponent).join("/");
+const dirname = p => p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
+const basename = p => p.slice(p.lastIndexOf("/") + 1);
+const title = p => basename(p).replace(/\.(md|markdown|txt)$/i, "");
+const isNote = p => /\.(md|markdown|txt)$/i.test(p);
+const store_get = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } };
+const store_set = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} };
+
+function b64enc(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+const b64dec = b64 => Uint8Array.from(atob(b64.replace(/\s/g, "")), c => c.charCodeAt(0));
+const utf8 = s => new TextEncoder().encode(s);
+const unutf8 = b => new TextDecoder().decode(b);
+
+// a path relative to dir, with ./ and ../; a leading / means repo root
+function resolve(dir, rel) {
+  rel = decodeURIComponent(rel);
+  const parts = rel.startsWith("/") ? [] : (dir ? dir.split("/") : []);
+  for (const seg of rel.split("/")) {
+    if (!seg || seg === ".") continue;
+    if (seg === "..") parts.pop(); else parts.push(seg);
+  }
+  return parts.join("/");
+}
+
+// names become folders and filenames, so keep them portable
+function cleanName(s) {
+  return s.replace(/[\/\\:*?"<>|#%\u0000-\u001f]/g, " ").replace(/^[\s.]+/, "").replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+// stable colour per subject, from its name
+function hue(name) {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return `hsl(${h % 360} 45% 52%)`;
+}
+
+class Conflict extends Error {}
+
+/* ═══ storage: Forgejo ════════════════════════════════════════════ */
+// The repo is the database: folders are subjects, .md files are notes,
+// every save is a commit. The blob sha is the optimistic lock.
+class ForgejoStore {
+  constructor(c) {
+    this.c = c;
+    this.base = (c.base || "").replace(/\/$/, "");
+    this.api = `${this.base}/api/v1/repos/${encPath(c.repo)}`;
+    this.blobs = new Map();
+    this.label = `${c.repo} · ${c.branch}`;
+  }
+  async req(method, path, body) {
+    const r = await fetch(this.api + path, {
+      method,
+      headers: { Authorization: `token ${this.c.token}`, Accept: "application/json",
+                 ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!r.ok) {
+      const e = new Error(`${method} ${path} → ${r.status} ${(await r.text().catch(() => "")).slice(0, 200)}`);
+      e.status = r.status;
+      throw e;
+    }
+    return r.status === 204 ? null : r;
+  }
+  async list() {
+    const out = [];
+    for (let page = 1; page < 50; page++) {
+      let d;
+      try {
+        d = await (await this.req("GET", `/git/trees/${encodeURIComponent(this.c.branch)}?recursive=true&per_page=10000&page=${page}`)).json();
+      } catch (e) {
+        if (e.status === 404 && page === 1) return out;  // empty repo
+        throw e;
+      }
+      for (const t of d.tree || []) out.push({ path: t.path, type: t.type, sha: t.sha });
+      if (!d.truncated) break;
+    }
+    return out;
+  }
+  async read(path) {
+    const d = await (await this.req("GET", `/contents/${encPath(path)}?ref=${encodeURIComponent(this.c.branch)}`)).json();
+    return { text: unutf8(b64dec(d.content || "")), sha: d.sha };
+  }
+  async currentSha(path) {
+    try { return (await this.read(path)).sha } catch (e) { if (e.status === 404) return null; throw e }
+  }
+  async put(path, bytes, sha, message) {
+    const body = { content: b64enc(bytes), message, branch: this.c.branch, ...(sha ? { sha } : {}) };
+    try {
+      const d = await (await this.req(sha ? "PUT" : "POST", `/contents/${encPath(path)}`, body)).json();
+      return { sha: d.content.sha };
+    } catch (e) {
+      // stale sha on update, or the file already exists on create
+      if (e.status >= 400 && e.status < 500 && e.status !== 401 && e.status !== 403) {
+        const now = await this.currentSha(path);
+        if (now !== sha) throw new Conflict(path);
+      }
+      throw e;
+    }
+  }
+  write(path, text, sha, message) { return this.put(path, utf8(text), sha, message) }
+  writeBinary(path, bytes, message) { return this.put(path, bytes, null, message) }
+  async remove(path, sha, message) {
+    await this.req("DELETE", `/contents/${encPath(path)}`, { sha, message, branch: this.c.branch });
+  }
+  // private repo: <img src> can't send the token, so fetch and hand back a blob: URL
+  async assetUrl(path) {
+    if (!this.blobs.has(path)) {
+      const r = await this.req("GET", `/raw/${encPath(path)}?ref=${encodeURIComponent(this.c.branch)}`);
+      this.blobs.set(path, URL.createObjectURL(await r.blob()));
+    }
+    return this.blobs.get(path);
+  }
+  // through a same-origin proxy only /api/ is forwarded, so there is no web UI to link to
+  historyUrl(path) { return this.base && `${this.base}/${encPath(this.c.repo)}/commits/branch/${encPath(this.c.branch)}/${encPath(path)}` }
+}
+
+/* ═══ storage: demo (localStorage) ════════════════════════════════ */
+// Same interface, so the UI can't tell the difference.
+class DemoStore {
+  constructor() {
+    this.label = "demo · this browser";
+    this.files = store_get("notebook.demo", null) || DemoStore.seed();
+  }
+  static sha(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0; return h.toString(16) + s.length.toString(16) }
+  save() { store_set("notebook.demo", this.files) }
+  async list() {
+    const dirs = new Set(), out = [];
+    for (const [path, f] of Object.entries(this.files)) {
+      out.push({ path, type: "blob", sha: f.sha });
+      let d = dirname(path);
+      while (d) { dirs.add(d); d = dirname(d) }
+    }
+    for (const d of dirs) out.push({ path: d, type: "tree", sha: "" });
+    return out;
+  }
+  async read(path) {
+    const f = this.files[path];
+    if (!f) { const e = new Error(`${path} not found`); e.status = 404; throw e }
+    return { text: f.text, sha: f.sha };
+  }
+  async write(path, text, sha, message) {
+    const cur = this.files[path];
+    if ((cur?.sha ?? null) !== (sha ?? null)) throw new Conflict(path);
+    this.files[path] = { text, sha: DemoStore.sha(text) };
+    this.save();
+    return { sha: this.files[path].sha };
+  }
+  async writeBinary(path, bytes) {
+    const url = `data:image/${path.split(".").pop()};base64,${b64enc(bytes)}`;
+    this.files[path] = { data: url, sha: DemoStore.sha(url) };
+    this.save();
+    return { sha: this.files[path].sha };
+  }
+  async remove(path) { delete this.files[path]; this.save() }
+  async assetUrl(path) { return this.files[path]?.data || "" }
+  historyUrl() { return null }
+  static seed() {
+    const f = {
+      "Infrastructure/README.md": `# Infrastructure\n\nWhere things run, how to get into them, and what breaks.\n\n- [[Proxmox cluster]]\n- [[HAProxy edge]]\n- [[Backups]]\n`,
+      "Infrastructure/Proxmox cluster.md": `# Proxmox cluster\n\n| Node | Role | RAM |\n|---|---|---|\n| pve1 | VMs | 128 GB |\n| pve2 | VMs | 128 GB |\n| pve3 | backup target | 64 GB |\n\nMigrate before patching:\n\n\`\`\`sh\nqm migrate 104 pve2 --online\n\`\`\`\n\n> Never reboot two nodes at once — quorum is three.\n`,
+      "Infrastructure/HAProxy edge.md": `# HAProxy edge\n\nTLS and HSTS end here. Backends see plain HTTP and trust \`X-Forwarded-For\` from the edge only.\n\nSee also [[Backups]].\n`,
+      "Infrastructure/Backups.md": `# Backups\n\n- [x] Nightly PBS job for all VMs\n- [x] Off-site sync, weekly\n- [ ] Restore test for the mail server\n- [ ] Document the restore order\n`,
+      "Onboarding/README.md": `# Onboarding\n\nFirst week for new staff. Tick things off as you go.\n`,
+      "Onboarding/Day one.md": `# Day one\n\n- [ ] Laptop handed over and enrolled\n- [ ] Forgejo account\n- [ ] Added to the notebook repo\n- [ ] Read [[House rules]]\n`,
+      "Onboarding/House rules.md": `# House rules\n\n1. Notes are shared. Write them for the next person.\n2. One subject per folder, one topic per note.\n3. Paste screenshots straight in — they land in \`assets/\`.\n`,
+      "Meetings/README.md": `# Meetings\n\nOne note per meeting, named by date.\n`,
+      "Meetings/2026-10/2026-10-21 Ops sync.md": `# Ops sync — 21 Oct\n\n**Present:** the ops team\n\n## Decisions\n- Move the matter board behind basic auth until review.\n\n## Actions\n- [x] Rotate the preview password\n- [ ] Write up the HAProxy change in [[/Infrastructure/HAProxy edge|HAProxy edge]]\n`,
+      "Meetings/2026-10/2026-10-28 Notebook idea.md": `# Notebook idea — 28 Oct\n\nA OneNote replacement that is just a git repo:\n\n- subject = folder = tile on the front page\n- note = markdown file\n- save = commit, history for free\n- search in the browser, cache by blob sha\n`,
+      "Ideas/README.md": `# Ideas\n\nHalf-formed things. No judgement.\n`,
+      "Ideas/Matter board.md": `# Matter board\n\nThe case-as-desktop prototype. Lives on the \`prototype/matter-board\` branch.\n`,
+    };
+    const out = {};
+    for (const [p, text] of Object.entries(f)) out[p] = { text, sha: DemoStore.sha(text) };
+    return out;
+  }
+}
+
+/* ═══ state ═══════════════════════════════════════════════════════ */
+const cfg = store_get("notebook.cfg", { mode: "demo", base: "", repo: "", branch: "main", token: "" });
+let store;
+let tree = [];               // [{path,type,sha}]
+const textCache = new Map(); // blob sha → text, for search; a changed file has a new sha
+let editing = null;          // {path, sha, original, isNew}
+let current = null;          // {path, sha, text}
+
+function makeStore() {
+  store = cfg.mode === "forgejo" && cfg.repo && cfg.token ? new ForgejoStore(cfg) : new DemoStore();
+  $("#conn").textContent = store.label;
+  $("#conn").classList.remove("err");
+}
+
+function banner(kind, msg) {
+  $("#banner").innerHTML = msg ? `<div class="banner ${kind}">${msg}</div>` : "";
+}
+
+async function refresh() {
+  try {
+    tree = await store.list();
+    $("#conn").classList.remove("err");
+  } catch (e) {
+    $("#conn").classList.add("err");
+    banner("err", `Couldn't list the repository: ${esc(e.message)}. Check Settings, and that the Forgejo instance allows this origin (CORS) or is proxied.`);
+    tree = [];
+  }
+}
+
+// top-level folders are subjects; dot-folders and assets/ are not notes
+function subjects() {
+  const subs = new Map();
+  for (const t of tree) {
+    const top = t.path.split("/")[0];
+    if (top.startsWith(".") || !t.path.includes("/") && t.type !== "tree") continue;
+    if (!subs.has(top)) subs.set(top, []);
+    if (t.type === "blob" && isNote(t.path) && t.path.includes("/") && !/(^|\/)(assets|\.[^/]+)\//.test(t.path))
+      subs.get(top).push(t);
+  }
+  return [...subs.entries()].sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: "base" }));
+}
+const notesIn = subject => (subjects().find(s => s[0] === subject) || [, []])[1];
+const isReadme = p => /\/README\.md$/i.test(p) && dirname(p).split("/").length === 1;
+
+/* ═══ routing ═════════════════════════════════════════════════════ */
+// #/                       board
+// #/s/<subject>            subject, opens README if any
+// #/n/<path/to/note.md>    a note
+let lastHash = location.hash;
+window.addEventListener("hashchange", () => {
+  if (editing && isDirty() && !confirm("Discard unsaved changes?")) {
+    history.replaceState(null, "", lastHash);
+    return;
+  }
+  editing = null;
+  lastHash = location.hash;
+  route();
+});
+window.addEventListener("beforeunload", e => { if (editing && isDirty()) e.preventDefault() });
+const go = h => { location.hash = h };
+
+function route() {
+  const h = decodeURIComponent(location.hash.slice(1) || "/");
+  if (h.startsWith("/n/")) return showSubject(h.slice(3).split("/")[0], h.slice(3));
+  if (h.startsWith("/s/")) return showSubject(h.slice(3), null);
+  showBoard();
+}
+
+/* ═══ board ═══════════════════════════════════════════════════════ */
+function showBoard() {
+  document.title = "Notebook";
+  const q = $("#q").value.trim().toLowerCase();
+  const subs = subjects().filter(([name, notes]) => !q || name.toLowerCase().includes(q) || notes.some(n => title(n.path).toLowerCase().includes(q)));
+  const tiles = subs.map(([name, notes]) => {
+    const list = notes.filter(n => !isReadme(n.path)).slice(0, 4);
+    const count = notes.filter(n => !isReadme(n.path)).length;
+    return `<a class="tile" style="--hue:${hue(name)}" href="#/s/${encPath(name)}">
+      <span class="count">${count} note${count === 1 ? "" : "s"}</span>
+      <h3>${esc(name)}</h3>
+      <ul>${list.map(n => `<li>${esc(title(n.path))}</li>`).join("")}</ul>
+    </a>`;
+  }).join("");
+  const titleHits = q ? tree.filter(t => t.type === "blob" && isNote(t.path) && title(t.path).toLowerCase().includes(q)).slice(0, 30) : [];
+  $("#main").innerHTML = `<div class="board">
+    <div class="tiles">${tiles}
+      <button class="tile new" id="newSubject"><span>+</span>New subject</button>
+    </div>
+    ${q ? `<div class="results"><h2>Notes titled “${esc(q)}”</h2>${
+      titleHits.length ? titleHits.map(t => resultRow(t.path)).join("") : `<p class="muted">None. Press Enter to search inside notes.</p>`
+    }<div id="ftResults"></div></div>` : ""}
+    ${!subs.length && !q ? `<p class="empty">No subjects yet. Make the first one.</p>` : ""}
+  </div>`;
+  $("#newSubject").onclick = newSubject;
+  if (q && ftQuery === q) fullText(q);
+}
+
+const resultRow = (path, snippet) =>
+  `<a class="result" href="#/n/${encPath(path)}"><b>${esc(title(path))}</b><small>${esc(dirname(path))}</small>${snippet ? `<p>${snippet}</p>` : ""}</a>`;
+
+// Full-text search without an index: fetch each note once, cache by blob sha.
+// Fine into the low thousands of notes; past that, add the SQLite index.
+let ftQuery = "", ftRun = 0;
+async function fullText(q) {
+  const box = $("#ftResults");
+  if (!box) return;
+  const run = ++ftRun;
+  const notes = tree.filter(t => t.type === "blob" && isNote(t.path) && !t.path.startsWith("."));
+  const needle = q.toLowerCase();
+  let done = 0;
+  const hits = [];
+  box.innerHTML = `<h2>Inside notes</h2><p class="muted">Searching…</p><div></div>`;
+  const [prog, list] = box.querySelectorAll("p, div");
+  const queue = [...notes];
+  async function worker() {
+    while (queue.length && run === ftRun) {
+      const t = queue.shift();
+      if (!textCache.has(t.sha)) {
+        try { textCache.set(t.sha, (await store.read(t.path)).text) } catch { textCache.set(t.sha, "") }
+      }
+      const text = textCache.get(t.sha);
+      const i = text.toLowerCase().indexOf(needle);
+      if (i >= 0) {
+        const s = Math.max(0, i - 60), e = Math.min(text.length, i + needle.length + 80);
+        const snip = (s ? "…" : "") + esc(text.slice(s, i)) + "<mark>" + esc(text.slice(i, i + needle.length)) + "</mark>" + esc(text.slice(i + needle.length, e)) + (e < text.length ? "…" : "");
+        hits.push(resultRow(t.path, snip));
+        list.innerHTML = hits.join("");
+      }
+      done++;
+      prog.textContent = `${done} of ${notes.length} notes searched · ${hits.length} match${hits.length === 1 ? "" : "es"}`;
+    }
+  }
+  await Promise.all(Array.from({ length: 6 }, worker));
+}
+
+async function newSubject() {
+  const name = cleanName(prompt("Name of the new subject:") || "");
+  if (!name) return;
+  if (subjects().some(s => s[0].toLowerCase() === name.toLowerCase())) return go(`#/s/${encPath(name)}`);
+  // git has no empty folders, so a subject starts with its README
+  try {
+    await store.write(`${name}/README.md`, `# ${name}\n\n`, null, `New subject: ${name}`);
+    await refresh();
+    go(`#/n/${encPath(name + "/README.md")}`);
+  } catch (e) { banner("err", `Couldn't create the subject: ${esc(e.message)}`) }
+}
+
+/* ═══ subject + note ══════════════════════════════════════════════ */
+async function showSubject(subject, path, draft = false) {
+  const notes = notesIn(subject);
+  if (!path && !draft) {
+    const readme = notes.find(n => isReadme(n.path)) || notes[0];
+    if (readme) return history.replaceState(null, "", lastHash = `#/n/${encPath(readme.path)}`), showSubject(subject, readme.path);
+  }
+  document.title = `${path ? title(path) + " — " : ""}${subject} · Notebook`;
+
+  // group by subfolder: Subject/a.md is top, Subject/2026-10/b.md is section "2026-10"
+  const groups = new Map();
+  for (const n of notes) {
+    const sect = dirname(n.path).split("/").slice(1).join(" / ");
+    if (!groups.has(sect)) groups.set(sect, []);
+    groups.get(sect).push(n);
+  }
+  const keys = [...groups.keys()].sort((a, b) => a === "" ? -1 : b === "" ? 1 : b.localeCompare(a));
+  const side = keys.map(k => {
+    const items = groups.get(k).sort((a, b) => isReadme(a.path) ? -1 : isReadme(b.path) ? 1 : title(a.path).localeCompare(title(b.path)));
+    return (k ? `<div class="sect">${esc(k)}</div>` : "") + items.map(n =>
+      `<a class="note${n.path === path ? " on" : ""}" href="#/n/${encPath(n.path)}">${isReadme(n.path) ? "Overview" : esc(title(n.path))}</a>`).join("");
+  }).join("");
+
+  $("#main").innerHTML = `<div class="subject" style="--hue:${hue(subject)}">
+    <nav class="side">
+      <a class="back" href="#/">← All subjects</a>
+      <h2><i></i>${esc(subject)}</h2>
+      ${side || `<p class="muted" style="margin:8px 6px">Empty.</p>`}
+      <button class="btn add" id="newNote">+ New note</button>
+    </nav>
+    <section class="pane" id="pane"></section>
+  </div>`;
+  $("#newNote").onclick = () => newNote(subject);
+
+  if (draft) return startEdit(true);
+  if (!path) { $("#pane").innerHTML = `<p class="empty">No notes in ${esc(subject)} yet.</p>`; return }
+  $("#pane").innerHTML = `<p class="empty">Loading…</p>`;
+  try {
+    const { text, sha } = await store.read(path);
+    current = { path, sha, text };
+    textCache.set(sha, text);
+    showNote();
+  } catch (e) {
+    $("#pane").innerHTML = `<p class="empty">${e.status === 404 ? "That note doesn't exist (any more)." : esc(e.message)}</p>`;
+  }
+}
+
+function showNote() {
+  const { path, text } = current;
+  const hist = store.historyUrl(path);
+  $("#pane").innerHTML = `
+    <div class="bar">
+      <span class="path" title="${esc(path)}">${esc(path)}</span>
+      ${hist ? `<a href="${esc(hist)}" target="_blank" rel="noopener">History</a>` : ""}
+      ${isReadme(path) ? "" : `<button class="btn danger" id="del">Delete</button>`}
+      <button class="btn primary" id="editBtn">Edit</button>
+    </div>
+    <article class="md" id="view"></article>`;
+  render($("#view"), text, path, true);
+  $("#editBtn").onclick = () => startEdit();
+  const del = $("#del");
+  if (del) del.onclick = async () => {
+    if (!confirm(`Delete “${title(path)}”? It stays in the repository history.`)) return;
+    try {
+      await store.remove(path, current.sha, `Delete ${path}`);
+      await refresh();
+      go(`#/s/${encPath(path.split("/")[0])}`);
+    } catch (e) { banner("err", `Couldn't delete: ${esc(e.message)}`) }
+  };
+}
+
+async function newNote(subject) {
+  const parts = (prompt(`New note in ${subject}.\nUse a slash to put it in a section, e.g. 2026-11/Planning`) || "").split("/").map(cleanName).filter(Boolean);
+  if (!parts.length) return;
+  const path = `${subject}/${parts.join("/")}.md`;
+  if (tree.some(t => t.path === path)) return go(`#/n/${encPath(path)}`);
+  current = { path, sha: null, text: `# ${title(path)}\n\n` };
+  history.replaceState(null, "", lastHash = `#/n/${encPath(path)}`);
+  showSubject(subject, path, true);
+}
+
+/* ═══ rendering ═══════════════════════════════════════════════════ */
+marked.use({ gfm: true });
+
+// [[Note]] → same folder; [[/Subject/Note]] → from the repo root; [[Note|label]]
+function wikiLinks(md) {
+  return md.split(/(```[\s\S]*?```|`[^`\n]*`)/).map((part, i) => i % 2 ? part :
+    part.replace(/\[\[([^\]|\n]+)(?:\|([^\]\n]+))?\]\]/g, (_, target, label) => {
+      target = target.trim();
+      const file = isNote(target) ? target : target + ".md";
+      return `[${label || basename(target)}](<${file}>)`;
+    })).join("");
+}
+
+function render(el, text, path, interactive) {
+  const dir = dirname(path);
+  el.innerHTML = DOMPurify.sanitize(marked.parse(wikiLinks(text)));
+  for (const a of el.querySelectorAll("a[href]")) {
+    const href = a.getAttribute("href");
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) { a.target = "_blank"; a.rel = "noopener"; continue }
+    if (href.startsWith("#")) continue;
+    const target = resolve(dir, href.split("#")[0]);
+    if (isNote(target)) {
+      a.href = `#/n/${encPath(target)}`;
+      if (!tree.some(t => t.path === target)) { a.classList.add("missing"); a.title = "Not written yet — click to create" }
+    } else {
+      a.href = "#";
+      a.onclick = async e => { e.preventDefault(); window.open(await store.assetUrl(target), "_blank") };
+    }
+  }
+  for (const img of el.querySelectorAll("img[src]")) {
+    const src = img.getAttribute("src");
+    if (/^[a-z][a-z0-9+.-]*:/i.test(src)) continue;
+    img.removeAttribute("src");
+    store.assetUrl(resolve(dir, src)).then(u => { img.src = u }).catch(() => { img.alt = `missing: ${src}` });
+  }
+  // ticking a box in read mode edits the source and saves
+  const boxes = el.querySelectorAll("input[type=checkbox]");
+  boxes.forEach((box, n) => {
+    if (!interactive) { box.disabled = true; return }
+    box.disabled = false;
+    box.onchange = () => toggleTask(n, box.checked);
+  });
+  // a missing [[link]] opens an editor for it
+  for (const a of el.querySelectorAll("a.missing")) {
+    a.onclick = e => {
+      e.preventDefault();
+      const p = decodeURIComponent(a.getAttribute("href").slice(4));
+      current = { path: p, sha: null, text: `# ${title(p)}\n\n` };
+      history.pushState(null, "", lastHash = `#/n/${encPath(p)}`);
+      showSubject(p.split("/")[0], p, true);
+    };
+  }
+}
+
+async function toggleTask(n, checked) {
+  let i = -1;
+  const lines = current.text.split("\n");
+  let fence = false;
+  for (let l = 0; l < lines.length; l++) {
+    if (/^\s*```/.test(lines[l])) fence = !fence;
+    if (fence) continue;
+    const m = lines[l].match(/^(\s*(?:[-*+]|\d+[.)])\s+\[)( |x|X)(\].*)$/);
+    if (m && ++i === n) { lines[l] = m[1] + (checked ? "x" : " ") + m[3]; break }
+  }
+  const text = lines.join("\n");
+  try {
+    const { sha } = await store.write(current.path, text, current.sha, `${checked ? "Tick" : "Untick"} task in ${current.path}`);
+    Object.assign(current, { text, sha });
+    await refresh();
+  } catch (e) {
+    banner(e instanceof Conflict ? "warn" : "err", e instanceof Conflict
+      ? "Someone else changed this note. Reloaded their version — tick it again." : `Couldn't save: ${esc(e.message)}`);
+    route();
+  }
+}
+
+/* ═══ editing ═════════════════════════════════════════════════════ */
+const isDirty = () => editing && $("#src") && $("#src").value !== editing.original;
+
+function startEdit(isNew = false) {
+  editing = { path: current.path, sha: current.sha, original: isNew ? "" : current.text, isNew };
+  const hist = store.historyUrl(current.path);
+  $("#pane").innerHTML = `
+    <div class="bar">
+      <span class="path">${esc(current.path)}</span>
+      <span class="state" id="state">${isNew ? "new note" : "editing"}</span>
+      ${hist && !isNew ? `<a href="${esc(hist)}" target="_blank" rel="noopener">History</a>` : ""}
+      <button class="btn" id="cancel">Cancel</button>
+      <button class="btn primary" id="save">Save</button>
+    </div>
+    <div class="edit">
+      <textarea id="src" spellcheck="true" aria-label="Markdown source"></textarea>
+      <article class="md" id="preview"></article>
+    </div>
+    <div class="hint">Ctrl/⌘+S saves · paste or drop an image to attach it · [[Note name]] links to another note</div>`;
+  const src = $("#src");
+  src.value = current.text;
+  const upd = () => {
+    if (!$("#preview")) return;
+    render($("#preview"), src.value, current.path, false);
+    $("#state").textContent = isDirty() ? "unsaved" : (isNew ? "new note" : "editing");
+    $("#state").classList.toggle("dirty", isDirty());
+  };
+  let t;
+  src.oninput = () => { clearTimeout(t); t = setTimeout(upd, 150) };
+  src.onkeydown = e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); save() }
+    if (e.key === "Tab" && !e.shiftKey) { e.preventDefault(); src.setRangeText("  ", src.selectionStart, src.selectionEnd, "end") }
+  };
+  src.onpaste = e => attach(e, [...(e.clipboardData?.files || [])]);
+  src.ondragover = e => e.preventDefault();
+  src.ondrop = e => attach(e, [...(e.dataTransfer?.files || [])]);
+  $("#save").onclick = save;
+  $("#cancel").onclick = () => {
+    if (isDirty() && !confirm("Discard unsaved changes?")) return;
+    const wasNew = editing.isNew;
+    editing = null;
+    wasNew ? go(`#/s/${encPath(current.path.split("/")[0])}`) : showNote();
+  };
+  upd();
+  src.focus();
+  if (isNew) src.setSelectionRange(src.value.length, src.value.length);
+}
+
+async function save() {
+  const text = $("#src").value;
+  $("#save").disabled = true;
+  $("#state").textContent = "saving…";
+  try {
+    const msg = editing.isNew ? `New note: ${editing.path}` : `Edit ${editing.path}`;
+    const { sha } = await store.write(editing.path, text, editing.sha, msg);
+    current = { path: editing.path, sha, text };
+    editing = null;
+    banner("", "");
+    await refresh();
+    showSubject(current.path.split("/")[0], current.path);
+  } catch (e) {
+    $("#save").disabled = false;
+    $("#state").textContent = "not saved";
+    if (e instanceof Conflict) {
+      banner("warn", `Someone else saved this note while you were editing. Your text is still in the editor — copy it, then reload the note to merge by hand.`);
+    } else {
+      banner("err", `Couldn't save: ${esc(e.message)}`);
+    }
+  }
+}
+
+// images go to <subject>/assets/, next to the notes that use them
+async function attach(e, files) {
+  files = files.filter(f => f.type.startsWith("image/"));
+  if (!files.length) return;
+  e.preventDefault();
+  const src = $("#src");
+  const subject = editing.path.split("/")[0];
+  for (const f of files) {
+    const ext = (f.type.split("/")[1] || "png").replace("jpeg", "jpg").replace(/\+.*/, "");
+    const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "").replace("T", "-");
+    const name = `${stamp}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
+    const assetPath = `${subject}/assets/${name}`;
+    const placeholder = `![uploading ${name}…]()`;
+    src.setRangeText(placeholder, src.selectionStart, src.selectionEnd, "end");
+    try {
+      await store.writeBinary(assetPath, new Uint8Array(await f.arrayBuffer()), `Attach ${assetPath}`);
+      const rel = resolve("", assetPath).split("/");
+      const fromDir = dirname(editing.path).split("/");
+      let common = 0;
+      while (common < fromDir.length && fromDir[common] === rel[common]) common++;
+      const link = [...Array(fromDir.length - common).fill(".."), ...rel.slice(common)].join("/");
+      src.value = src.value.replace(placeholder, `![](${encodeURI(link)})`);
+    } catch (err) {
+      src.value = src.value.replace(placeholder, "");
+      banner("err", `Couldn't upload the image: ${esc(err.message)}`);
+    }
+    src.dispatchEvent(new Event("input"));
+  }
+}
+
+/* ═══ search box, settings, theme ═════════════════════════════════ */
+$("#q").addEventListener("input", () => { if (!location.hash.startsWith("#/n/") && !location.hash.startsWith("#/s/")) showBoard() });
+$("#q").addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.value.trim()) {
+    if (location.hash.length > 2) { editing = null; history.pushState(null, "", lastHash = "#/"); }
+    ftQuery = e.target.value.trim().toLowerCase();
+    showBoard();
+  }
+  if (e.key === "Escape") { e.target.value = ""; route() }
+});
+
+const dlg = $("#settings");
+function syncSettingsForm() { $("#sForgejo").hidden = $("#sMode").value !== "forgejo" }
+$("#settingsBtn").onclick = () => {
+  $("#sMode").value = cfg.mode; $("#sBase").value = cfg.base; $("#sRepo").value = cfg.repo;
+  $("#sBranch").value = cfg.branch || "main"; $("#sToken").value = cfg.token;
+  syncSettingsForm(); dlg.showModal();
+};
+$("#sMode").onchange = syncSettingsForm;
+dlg.addEventListener("close", async () => {
+  if (dlg.returnValue !== "save") return;
+  Object.assign(cfg, { mode: $("#sMode").value, base: $("#sBase").value.trim(), repo: $("#sRepo").value.trim().replace(/^\/|\/$/g, ""),
+                       branch: $("#sBranch").value.trim() || "main", token: $("#sToken").value.trim() });
+  store_set("notebook.cfg", cfg);
+  textCache.clear(); banner("", "");
+  makeStore(); await refresh(); go("#/"); route();
+});
+
+$("#themeBtn").onclick = () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme:dark)").matches;
+  const next = dark ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  store_set("notebook.theme", next);
+};
+{ const t = store_get("notebook.theme", null); if (t) document.documentElement.setAttribute("data-theme", t) }
+
+/* ═══ go ══════════════════════════════════════════════════════════ */
+(async () => { makeStore(); await refresh(); route() })();
+</script>
+</body>
+</html>
