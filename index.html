@@ -210,6 +210,7 @@ dialog p a{color:var(--accent)}
     </label>
     <span class="conn" id="conn">…</span>
     <button class="tbtn" id="settingsBtn">Settings</button>
+    <button class="tbtn" id="signOutBtn" hidden>Sign out</button>
     <button class="tbtn" id="themeBtn" aria-label="Toggle theme">◐</button>
   </header>
   <div id="banner"></div>
@@ -492,6 +493,7 @@ function makeStore() {
   store = Remote && (pinned || cfg.repo && cfg.token) ? new Remote(cfg) : new DemoStore();
   if (pinned && !cfg.token) store.label += " · not signed in";
   $("#settingsBtn").textContent = !pinned ? "Settings" : cfg.token ? "Token" : "Sign in";
+  $("#signOutBtn").hidden = !(Remote && cfg.token);
   $("#conn").textContent = store.label;
   $("#conn").classList.remove("err");
 }
@@ -528,7 +530,7 @@ function subjects() {
     if (t.type === "blob" && isNote(t.path) && t.path.includes("/") && !/(^|\/)(assets|\.[^/]+)\//.test(t.path))
       subs.get(top).push(t);
   }
-  return [...subs.entries()].sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: "base" }));
+  return [...subs.entries()].filter(([, notes]) => notes.length).sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: "base" }));
 }
 const notesIn = subject => (subjects().find(s => s[0] === subject) || [, []])[1];
 const isReadme = p => /\/README\.md$/i.test(p) && dirname(p).split("/").length === 1;
@@ -939,6 +941,22 @@ function openSettings() {
   syncSettingsForm(); dlg.showModal();
 }
 $("#settingsBtn").onclick = openSettings;
+
+// forget the token and drop every note held in the page; nothing is kept on disk
+$("#signOutBtn").onclick = async () => {
+  if (editing && isDirty() && !confirm("You have unsaved changes. Sign out and lose them?")) return;
+  cfg.token = "";
+  store_set("noteone.cfg", cfg);
+  for (const u of store.blobs?.values() || []) URL.revokeObjectURL(u);
+  textCache.clear();
+  editing = current = null;
+  tree = [];
+  $("#q").value = "";
+  banner("", "");
+  history.replaceState(null, "", lastHash = "#/");
+  makeStore(); await refresh(); route();
+  if (pinned) openSettings();
+};
 $("#sStorage").onchange = syncSettingsForm;
 $("#sBase").oninput = syncSettingsForm;
 dlg.addEventListener("close", async () => {

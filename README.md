@@ -15,6 +15,7 @@ browser talks to GitHub or Forgejo with that person's own token.
 
     index.html           the whole app — edit this
     config.example.json  copy to config.json to pin the repo (see below)
+    .nojekyll            tells GitHub Pages to serve the files as they are
     vendor/              marked 15.0.12 (markdown), DOMPurify 3.2.6 (sanitiser)
     fonts/, fonts.css    Public Sans, Source Serif 4, IBM Plex Mono (SIL OFL)
 
@@ -88,12 +89,52 @@ notes is the repository's permissions, so:
 
 ## Hosting
 
-### GitHub
+### GitHub Pages — the easy way
 
-Nothing to set up: `api.github.com` accepts calls from any web page. Host the
-app anywhere, including **GitHub Pages** from the app repo. The page itself
-can be public: it holds no notes and no secrets, and the notes repo stays
-private.
+The app and the notes live in **two repos**: this one (public, the app) and a
+**private** one that holds the notes. The page only shows the repo you point
+it at; it never shows its own files.
+
+1. **Turn on Pages for this repo.** On GitHub: the repo → **Settings** →
+   **Pages**. Under *Build and deployment*, set *Source* to **Deploy from a
+   branch**, *Branch* to **main** and the folder to **/ (root)**, then
+   **Save**. After a minute or two the address appears at the top of that
+   page: `https://<your-username>.github.io/NoteOne/`.
+2. **Make the notes repo.** New repository, e.g. `notes`, set to
+   **Private**, with *Add a README* ticked (an empty repo has nothing for the
+   page to list).
+3. **Add people.** In the notes repo → **Settings** → **Collaborators** →
+   *Add people*. Collaborators get write access, which is what they need.
+4. **Each person makes a token** (see Permissions above), opens the Pages
+   address, clicks **Settings**, picks **GitHub**, and enters
+   `<your-username>/notes`, branch `main`, and their token.
+
+`.nojekyll` in this repo tells Pages to serve the files exactly as they are.
+Nothing else needs setting up: `api.github.com` accepts calls from any web
+page.
+
+**Pointing it at this repo instead?** It would work, because folders with no
+notes (`fonts/`, `vendor/`) are hidden, but this repo is public, so the notes
+would be public too. Use a private notes repo.
+
+**Pinning it for your team.** Commit a `config.json` here (see above) and the
+Pages site only ever opens your notes repo. The repo's *name* becomes visible
+to anyone who visits, but not its notes. Anyone who forks this repo should
+delete that file.
+
+**One caution.** Every Pages site under one account shares the address
+`<your-username>.github.io`, and with it the browser storage where the token
+is kept. Any other Pages site you publish there could read that token. Only
+publish pages there you trust, or give NoteOne its own domain (Settings →
+Pages → *Custom domain*).
+
+Private repos can only use Pages on a paid plan, which is another reason the
+app repo is the public one.
+
+### GitHub, hosted elsewhere
+
+Any static web host works. Serve the files as they are; there is no build
+step.
 
 ### Forgejo
 
@@ -177,11 +218,16 @@ source of truth, and the index can always be rebuilt from the repo.
   Forgejo 13.0.2 server. **No real reads or saves yet.**
 - **Pinning**: a pinned config ignores earlier browser settings, only ever
   talks to the pinned repo, and a broken config stops the page.
+- **Sign out**: deletes the saved token, clears notes from memory, and
+  either falls back to the demo or reopens the sign-in box (pinned).
 
 ## Known limits (it is a prototype)
 
-- **Tokens are pasted and stay in the browser's localStorage.** The next step
-  is OAuth sign-in (GitHub OAuth app, or Forgejo OAuth2 with PKCE).
+- **Tokens are pasted and stay in the browser's localStorage** until someone
+  clicks **Sign out**, which deletes the token and clears every note from the
+  page. Notes themselves are never saved on the computer. On a shared PC,
+  sign out when you're done. The next step is OAuth sign-in (GitHub OAuth
+  app, or Forgejo OAuth2 with PKCE).
 - No rename or move yet.
 - A brand-new GitHub repo with no commits may refuse the first save. Create
   it with a README.
