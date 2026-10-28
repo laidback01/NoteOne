@@ -14,6 +14,7 @@ browser talks to the Forgejo API with that person's own token.
 ## Files
 
     index.html        the whole app — edit this
+    config.example.json  copy to config.json to pin the repo (see below)
     vendor/           marked 15.0.12 (markdown), DOMPurify 3.2.6 (sanitiser)
     fonts/, fonts.css same fonts as the matter board
 
@@ -43,6 +44,33 @@ Put people in an org team with access to the repo. That's the admin job.
 Each person makes a token in Forgejo (Settings → Applications) with
 `write:repository` (or `read:repository` for readers) and pastes it into
 Settings. Commits and history then show who changed what.
+
+## Pinning the repo (`config.json`)
+
+Without a config, anyone can switch the page between demo mode and any
+repo. For a team deployment, put a `config.json` next to `index.html`:
+
+    { "base": "", "repo": "owner/notes", "branch": "main" }
+
+Then the page always uses that repo. Settings becomes "Sign in" and only asks
+for the person's token. The storage, server, repo and branch fields are hidden,
+and anything saved in the browser earlier is ignored. `config.example.json` is
+the template. `base` works the same as the Forgejo URL field below.
+
+**What this does and doesn't protect.** It's a deployment setting, not a
+security boundary. Settings live in each person's own browser, so changing
+them only ever affected that browser, never anyone else's. Someone who wants
+to could still open a different copy of the page. What actually protects the
+notes is Forgejo:
+
+- **Keep the app and the notes in separate repos.** `config.json` is on the
+  web server, which contributors can't reach. If the page were served out of
+  the notes repo itself, anyone with write access could edit the config.
+- **Owner**: owns the notes repo (or is an org owner), so has admin on it.
+- **Contributor**: added as a collaborator with **Write**, not Admin. Write
+  covers editing notes. Admin would also let them change collaborators,
+  webhooks and repo settings.
+- Give contributors no access to the app repo.
 
 ## Hosting
 

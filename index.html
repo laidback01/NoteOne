@@ -209,19 +209,23 @@ dialog p{font-size:12.5px;color:var(--ink-2);margin:8px 0 0}
 
 <dialog id="settings">
   <form method="dialog" id="settingsForm">
-    <h3>Where the notes live</h3>
-    <label for="sMode">Storage</label>
-    <select id="sMode">
-      <option value="demo">Demo — this browser only, sample notes</option>
-      <option value="forgejo">Forgejo repository</option>
-    </select>
+    <h3 id="sTitle">Where the notes live</h3>
+    <div id="sStorage">
+      <label for="sMode">Storage</label>
+      <select id="sMode">
+        <option value="demo">Demo — this browser only, sample notes</option>
+        <option value="forgejo">Forgejo repository</option>
+      </select>
+    </div>
     <div id="sForgejo">
-      <label for="sBase">Forgejo URL (blank = same origin, via proxy)</label>
-      <input id="sBase" placeholder="https://forgejo.example.net">
-      <label for="sRepo">Repository (owner/name)</label>
-      <input id="sRepo" placeholder="team/notes">
-      <label for="sBranch">Branch</label>
-      <input id="sBranch" placeholder="main">
+      <div id="sServer">
+        <label for="sBase">Forgejo URL (blank = same origin, via proxy)</label>
+        <input id="sBase" placeholder="https://forgejo.example.net">
+        <label for="sRepo">Repository (owner/name)</label>
+        <input id="sRepo" placeholder="team/notes">
+        <label for="sBranch">Branch</label>
+        <input id="sBranch" placeholder="main">
+      </div>
       <label for="sToken">Access token</label>
       <input id="sToken" type="password" autocomplete="off">
       <p>Needs <code>write:repository</code>. Kept in this browser's localStorage. Each save is a commit as you.</p>
@@ -294,7 +298,7 @@ class ForgejoStore {
   async req(method, path, body) {
     const r = await fetch(this.api + path, {
       method,
-      headers: { Authorization: `token ${this.c.token}`, Accept: "application/json",
+      headers: { ...(this.c.token ? { Authorization: `token ${this.c.token}` } : {}), Accept: "application/json",
                  ...(body ? { "Content-Type": "application/json" } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -421,6 +425,9 @@ class DemoStore {
 
 /* ═══ state ═══════════════════════════════════════════════════════ */
 const cfg = store_get("notebook.cfg", { mode: "demo", base: "", repo: "", branch: "main", token: "" });
+// config.json, deployed next to the page by whoever runs it, pins the repo:
+// people then only enter their own token, and demo mode is off
+let pinned = null;
 let store;
 let tree = [];               // [{path,type,sha}]
 const textCache = new Map(); // blob sha → text, for search; a changed file has a new sha
@@ -428,7 +435,10 @@ let editing = null;          // {path, sha, original, isNew}
 let current = null;          // {path, sha, text}
 
 function makeStore() {
-  store = cfg.mode === "forgejo" && cfg.repo && cfg.token ? new ForgejoStore(cfg) : new DemoStore();
+  if (pinned) Object.assign(cfg, pinned, { mode: "forgejo" });
+  store = pinned || cfg.mode === "forgejo" && cfg.repo && cfg.token ? new ForgejoStore(cfg) : new DemoStore();
+  if (pinned && !cfg.token) store.label = `${cfg.repo} · not signed in`;
+  $("#settingsBtn").textContent = !pinned ? "Settings" : cfg.token ? "Token" : "Sign in";
   $("#conn").textContent = store.label;
   $("#conn").classList.remove("err");
 }
@@ -835,16 +845,22 @@ $("#q").addEventListener("keydown", e => {
 });
 
 const dlg = $("#settings");
-function syncSettingsForm() { $("#sForgejo").hidden = $("#sMode").value !== "forgejo" }
-$("#settingsBtn").onclick = () => {
+function syncSettingsForm() {
+  $("#sStorage").hidden = $("#sServer").hidden = !!pinned;
+  $("#sForgejo").hidden = !pinned && $("#sMode").value !== "forgejo";
+  $("#sTitle").textContent = pinned ? `Sign in to ${pinned.repo}` : "Where the notes live";
+}
+function openSettings() {
   $("#sMode").value = cfg.mode; $("#sBase").value = cfg.base; $("#sRepo").value = cfg.repo;
   $("#sBranch").value = cfg.branch || "main"; $("#sToken").value = cfg.token;
   syncSettingsForm(); dlg.showModal();
-};
+}
+$("#settingsBtn").onclick = openSettings;
 $("#sMode").onchange = syncSettingsForm;
 dlg.addEventListener("close", async () => {
   if (dlg.returnValue !== "save") return;
-  Object.assign(cfg, { mode: $("#sMode").value, base: $("#sBase").value.trim(), repo: $("#sRepo").value.trim().replace(/^\/|\/$/g, ""),
+  if (pinned) Object.assign(cfg, { token: $("#sToken").value.trim() });
+  else Object.assign(cfg, { mode: $("#sMode").value, base: $("#sBase").value.trim(), repo: $("#sRepo").value.trim().replace(/^\/|\/$/g, ""),
                        branch: $("#sBranch").value.trim() || "main", token: $("#sToken").value.trim() });
   store_set("notebook.cfg", cfg);
   textCache.clear(); banner("", "");
@@ -861,7 +877,17 @@ $("#themeBtn").onclick = () => {
 { const t = store_get("notebook.theme", null); if (t) document.documentElement.setAttribute("data-theme", t) }
 
 /* ═══ go ══════════════════════════════════════════════════════════ */
-(async () => { makeStore(); await refresh(); route() })();
+(async () => {
+  try {
+    const r = await fetch("config.json", { cache: "no-cache" });
+    if (r.ok) {
+      const c = await r.json();
+      if (c.repo) pinned = { base: (c.base || "").replace(/\/$/, ""), repo: c.repo, branch: c.branch || "main" };
+    }
+  } catch {}
+  makeStore(); await refresh(); route();
+  if (pinned && !cfg.token) openSettings();
+})();
 </script>
 </body>
 </html>
