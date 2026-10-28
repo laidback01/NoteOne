@@ -181,6 +181,15 @@ dialog label{display:block;font-size:12px;color:var(--ink-2);margin:10px 0 3px}
 dialog input,dialog select{width:100%;padding:6px 9px;border:1px solid var(--line-strong);border-radius:4px;background:var(--surface-alt)}
 dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
 dialog p{font-size:12.5px;color:var(--ink-2);margin:8px 0 0}
+dialog p a{color:var(--accent)}
+.choices{border:0;padding:0;margin:0;display:grid;gap:8px}
+.choice{display:grid!important;grid-template-columns:auto 1fr;column-gap:10px;align-items:baseline;margin:0!important;
+  padding:10px 12px;border:1px solid var(--line-strong);border-radius:5px;cursor:pointer;color:var(--ink)!important}
+.choice:has(input:checked){border-color:var(--primary);background:var(--primary-wash)}
+.choice input{width:auto;grid-row:span 2;accent-color:var(--primary)}
+.choice b{font-size:14.5px}
+.choice span{grid-column:2;font-size:12px;color:var(--ink-2)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 
 @media (max-width:760px){
   .subject{grid-template-columns:1fr;grid-template-rows:auto 1fr}
@@ -209,26 +218,25 @@ dialog p{font-size:12.5px;color:var(--ink-2);margin:8px 0 0}
 
 <dialog id="settings">
   <form method="dialog" id="settingsForm">
-    <h3 id="sTitle">Where the notes live</h3>
-    <div id="sStorage">
-      <label for="sMode">Storage</label>
-      <select id="sMode">
-        <option value="demo">Demo — this browser only, sample notes</option>
-        <option value="forgejo">Forgejo repository</option>
-      </select>
-    </div>
-    <div id="sForgejo">
+    <h3 id="sTitle">Where are the notes kept?</h3>
+    <fieldset id="sStorage" class="choices">
+      <legend class="sr">Where the notes are kept</legend>
+      <label class="choice"><input type="radio" name="mode" value="github"><b>GitHub</b><span>github.com, or your company's GitHub Enterprise</span></label>
+      <label class="choice"><input type="radio" name="mode" value="forgejo"><b>Forgejo</b><span>a Forgejo server you or your team run</span></label>
+      <label class="choice"><input type="radio" name="mode" value="demo"><b>Just try it</b><span>sample notes, kept on this computer only</span></label>
+    </fieldset>
+    <div id="sRemote">
       <div id="sServer">
-        <label for="sBase">Forgejo URL (blank = same origin, via proxy)</label>
-        <input id="sBase" placeholder="https://forgejo.example.net">
+        <label for="sBase" id="sBaseLabel">Address</label>
+        <input id="sBase">
         <label for="sRepo">Repository (owner/name)</label>
         <input id="sRepo" placeholder="team/notes">
         <label for="sBranch">Branch</label>
         <input id="sBranch" placeholder="main">
       </div>
-      <label for="sToken">Access token</label>
+      <label for="sToken" id="sTokenLabel">Access token</label>
       <input id="sToken" type="password" autocomplete="off">
-      <p>Needs <code>write:repository</code>. Kept in this browser's localStorage. Each save is a commit as you.</p>
+      <p id="sTokenHelp"></p>
     </div>
     <div class="row">
       <button class="btn" value="cancel" formnovalidate>Cancel</button>
@@ -293,13 +301,17 @@ class ForgejoStore {
     this.base = (c.base || "").replace(/\/$/, "");
     this.api = `${this.base}/api/v1/repos/${encPath(c.repo)}`;
     this.blobs = new Map();
-    this.label = `${c.repo} · ${c.branch}`;
+    this.label = `Forgejo · ${c.repo}`;
   }
-  async req(method, path, body) {
+  headers(accept = "application/json") {
+    return { ...(this.c.token ? { Authorization: `token ${this.c.token}` } : {}), Accept: accept };
+  }
+  async req(method, path, body, accept) {
+    // no HTTP cache: GitHub says max-age=60, which would show a note as it was before a save
     const r = await fetch(this.api + path, {
       method,
-      headers: { ...(this.c.token ? { Authorization: `token ${this.c.token}` } : {}), Accept: "application/json",
-                 ...(body ? { "Content-Type": "application/json" } : {}) },
+      cache: "no-store",
+      headers: { ...this.headers(accept), ...(body ? { "Content-Type": "application/json" } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
     if (!r.ok) {
@@ -334,7 +346,7 @@ class ForgejoStore {
   async put(path, bytes, sha, message) {
     const body = { content: b64enc(bytes), message, branch: this.c.branch, ...(sha ? { sha } : {}) };
     try {
-      const d = await (await this.req(sha ? "PUT" : "POST", `/contents/${encPath(path)}`, body)).json();
+      const d = await (await this.req(sha ? "PUT" : this.createMethod, `/contents/${encPath(path)}`, body)).json();
       return { sha: d.content.sha };
     } catch (e) {
       // stale sha on update, or the file already exists on create
@@ -353,14 +365,54 @@ class ForgejoStore {
   // private repo: <img src> can't send the token, so fetch and hand back a blob: URL
   async assetUrl(path) {
     if (!this.blobs.has(path)) {
-      const r = await this.req("GET", `/raw/${encPath(path)}?ref=${encodeURIComponent(this.c.branch)}`);
+      const r = await this.raw(path);
       this.blobs.set(path, URL.createObjectURL(await r.blob()));
     }
     return this.blobs.get(path);
   }
+  raw(path) { return this.req("GET", `/raw/${encPath(path)}?ref=${encodeURIComponent(this.c.branch)}`) }
   // through a same-origin proxy only /api/ is forwarded, so there is no web UI to link to
   historyUrl(path) { return this.base && `${this.base}/${encPath(this.c.repo)}/commits/branch/${encPath(this.c.branch)}/${encPath(path)}` }
 }
+ForgejoStore.prototype.createMethod = "POST";
+
+/* ═══ storage: GitHub ═════════════════════════════════════════════ */
+// Same contents API with small differences: PUT creates as well as updates,
+// the token goes in a Bearer header, and the tree comes back in one page.
+// api.github.com allows cross-origin calls, so no proxy is needed.
+class GitHubStore extends ForgejoStore {
+  constructor(c) {
+    super(c);
+    // blank = github.com; otherwise a GitHub Enterprise server
+    this.web = this.base || "https://github.com";
+    this.api = `${this.base ? this.base + "/api/v3" : "https://api.github.com"}/repos/${encPath(c.repo)}`;
+    this.label = `GitHub · ${c.repo}`;
+  }
+  headers(accept = "application/vnd.github+json") {
+    return { ...(this.c.token ? { Authorization: `Bearer ${this.c.token}` } : {}), Accept: accept,
+             "X-GitHub-Api-Version": "2022-11-28" };
+  }
+  async list() {
+    let d;
+    try {
+      d = await (await this.req("GET", `/git/trees/${encodeURIComponent(this.c.branch)}?recursive=1`)).json();
+    } catch (e) {
+      if (e.status === 404 || e.status === 409) return [];  // missing branch, or a repo with no commits
+      throw e;
+    }
+    if (d.truncated) banner("warn", "This repository is too large for GitHub to list in one go; some notes are missing.");
+    return (d.tree || []).map(t => ({ path: t.path, type: t.type, sha: t.sha }));
+  }
+  async read(path) {
+    const d = await (await this.req("GET", `/contents/${encPath(path)}?ref=${encodeURIComponent(this.c.branch)}`)).json();
+    // over 1 MB GitHub leaves content out; fetch the raw bytes instead
+    if (!d.content && d.size) return { text: unutf8(new Uint8Array(await (await this.raw(path)).arrayBuffer())), sha: d.sha };
+    return { text: unutf8(b64dec(d.content || "")), sha: d.sha };
+  }
+  raw(path) { return this.req("GET", `/contents/${encPath(path)}?ref=${encodeURIComponent(this.c.branch)}`, null, "application/vnd.github.raw") }
+  historyUrl(path) { return `${this.web}/${encPath(this.c.repo)}/commits/${encPath(this.c.branch)}/${encPath(path)}` }
+}
+GitHubStore.prototype.createMethod = "PUT";
 
 /* ═══ storage: demo (localStorage) ════════════════════════════════ */
 // Same interface, so the UI can't tell the difference.
@@ -435,9 +487,10 @@ let editing = null;          // {path, sha, original, isNew}
 let current = null;          // {path, sha, text}
 
 function makeStore() {
-  if (pinned) Object.assign(cfg, pinned, { mode: "forgejo" });
-  store = pinned || cfg.mode === "forgejo" && cfg.repo && cfg.token ? new ForgejoStore(cfg) : new DemoStore();
-  if (pinned && !cfg.token) store.label = `${cfg.repo} · not signed in`;
+  if (pinned) Object.assign(cfg, pinned);
+  const Remote = { github: GitHubStore, forgejo: ForgejoStore }[cfg.mode];
+  store = Remote && (pinned || cfg.repo && cfg.token) ? new Remote(cfg) : new DemoStore();
+  if (pinned && !cfg.token) store.label += " · not signed in";
   $("#settingsBtn").textContent = !pinned ? "Settings" : cfg.token ? "Token" : "Sign in";
   $("#conn").textContent = store.label;
   $("#conn").classList.remove("err");
@@ -453,7 +506,14 @@ async function refresh() {
     $("#conn").classList.remove("err");
   } catch (e) {
     $("#conn").classList.add("err");
-    banner("err", `Couldn't list the repository: ${esc(e.message)}. Check Settings, and that the Forgejo instance allows this origin (CORS) or is proxied.`);
+    const svc = SERVICES[cfg.mode]?.name || "the server";
+    banner("err",
+      e.status === 401 ? `${svc} didn't accept your access token. Open ${pinned ? "Sign in" : "Settings"} and paste a new one.` :
+      e.status === 403 ? `Your ${svc} account can't open ${esc(cfg.repo)}. Ask the owner to add you to the repository.` :
+      e.status === 404 ? `${svc} can't find ${esc(cfg.repo)}. Check the name in Settings — or, if it's private, that your token can see it.` :
+      e.status ? `${svc} said no: ${esc(e.message)}` :
+      cfg.mode === "forgejo" ? `Couldn't reach Forgejo. It has to be set up to allow this page (CORS), or this page has to reach it through a proxy.` :
+      `Couldn't reach ${svc}. Check the address in Settings and your connection.`);
     tree = [];
   }
 }
@@ -845,22 +905,46 @@ $("#q").addEventListener("keydown", e => {
 });
 
 const dlg = $("#settings");
+const SERVICES = {
+  github: {
+    name: "GitHub",
+    base: "GitHub Enterprise address — leave blank for github.com",
+    placeholder: "https://github.example.com",
+    help: base => `Make a <a href="${esc(base || "https://github.com")}/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>: pick only this repository, and give it <b>Contents: Read and write</b>. If the repository isn't offered, make a <a href="${esc(base || "https://github.com")}/settings/tokens/new?scopes=repo&description=Notebook" target="_blank" rel="noopener">classic token</a> with <b>repo</b> ticked instead.`,
+  },
+  forgejo: {
+    name: "Forgejo",
+    base: "Forgejo address — leave blank if this page was set up to reach it for you",
+    placeholder: "https://forgejo.example.net",
+    help: base => `Make a token under ${base ? `<a href="${esc(base)}/user/settings/applications" target="_blank" rel="noopener">Settings → Applications</a>` : "Settings → Applications"} with <b>repository: Read and write</b>.`,
+  },
+};
+const formMode = () => pinned ? pinned.mode : ($("input[name=mode]:checked")?.value || "demo");
 function syncSettingsForm() {
+  const mode = formMode(), svc = SERVICES[mode];
   $("#sStorage").hidden = $("#sServer").hidden = !!pinned;
-  $("#sForgejo").hidden = !pinned && $("#sMode").value !== "forgejo";
-  $("#sTitle").textContent = pinned ? `Sign in to ${pinned.repo}` : "Where the notes live";
+  $("#sRemote").hidden = !svc;
+  $("#sTitle").textContent = pinned ? `Sign in to ${pinned.repo} on ${svc.name}` : "Where are the notes kept?";
+  if (!svc) return;
+  $("#sBaseLabel").textContent = svc.base;
+  $("#sBase").placeholder = svc.placeholder;
+  $("#sTokenLabel").textContent = `Your ${svc.name} access token`;
+  $("#sTokenHelp").innerHTML = `${svc.help(pinned ? pinned.base : $("#sBase").value.trim())} It stays in this browser, and every save is recorded under your name.`;
 }
 function openSettings() {
-  $("#sMode").value = cfg.mode; $("#sBase").value = cfg.base; $("#sRepo").value = cfg.repo;
+  const radio = $(`input[name=mode][value="${cfg.mode}"]`);
+  if (radio) radio.checked = true;
+  $("#sBase").value = cfg.base; $("#sRepo").value = cfg.repo;
   $("#sBranch").value = cfg.branch || "main"; $("#sToken").value = cfg.token;
   syncSettingsForm(); dlg.showModal();
 }
 $("#settingsBtn").onclick = openSettings;
-$("#sMode").onchange = syncSettingsForm;
+$("#sStorage").onchange = syncSettingsForm;
+$("#sBase").oninput = syncSettingsForm;
 dlg.addEventListener("close", async () => {
   if (dlg.returnValue !== "save") return;
   if (pinned) Object.assign(cfg, { token: $("#sToken").value.trim() });
-  else Object.assign(cfg, { mode: $("#sMode").value, base: $("#sBase").value.trim(), repo: $("#sRepo").value.trim().replace(/^\/|\/$/g, ""),
+  else Object.assign(cfg, { mode: formMode(), base: $("#sBase").value.trim(), repo: $("#sRepo").value.trim().replace(/^\/|\/$/g, ""),
                        branch: $("#sBranch").value.trim() || "main", token: $("#sToken").value.trim() });
   store_set("notebook.cfg", cfg);
   textCache.clear(); banner("", "");
@@ -881,10 +965,14 @@ $("#themeBtn").onclick = () => {
   try {
     const r = await fetch("config.json", { cache: "no-cache" });
     if (r.ok) {
-      const c = await r.json();
-      if (c.repo) pinned = { base: (c.base || "").replace(/\/$/, ""), repo: c.repo, branch: c.branch || "main" };
+      const c = await r.json().catch(() => ({}));
+      const mode = String(c.service || "").toLowerCase();
+      if (c.repo && SERVICES[mode]) pinned = { mode, base: (c.base || "").replace(/\/$/, ""), repo: c.repo, branch: c.branch || "main" };
+      else return $("#settingsBtn").hidden = true, banner("err", `This page's config.json needs <code>"service": "github"</code> or <code>"service": "forgejo"</code>, and a <code>"repo"</code>. Ask whoever set it up.`);
     }
-  } catch {}
+  } catch {
+    // can't fetch config.json (e.g. opened straight from disk): run unpinned
+  }
   makeStore(); await refresh(); route();
   if (pinned && !cfg.token) openSettings();
 })();
