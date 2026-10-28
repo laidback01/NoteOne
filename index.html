@@ -10,7 +10,7 @@
 <script src="vendor/marked.min.js"></script>
 <script src="vendor/purify.min.js"></script>
 <style>
-/* ── tokens: light (same palette as the matter board) ─────────── */
+/* ── tokens: light ─────────────────────────────────────────────── */
 :root{
   color-scheme:light dark;
   --page:#f2ecec; --surface:#fff; --surface-alt:#faf7f7; --sunken:#e8dedf;
@@ -456,18 +456,18 @@ class DemoStore {
   historyUrl() { return null }
   static seed() {
     const f = {
-      "Infrastructure/README.md": `# Infrastructure\n\nWhere things run, how to get into them, and what breaks.\n\n- [[Proxmox cluster]]\n- [[HAProxy edge]]\n- [[Backups]]\n`,
-      "Infrastructure/Proxmox cluster.md": `# Proxmox cluster\n\n| Node | Role | RAM |\n|---|---|---|\n| pve1 | VMs | 128 GB |\n| pve2 | VMs | 128 GB |\n| pve3 | backup target | 64 GB |\n\nMigrate before patching:\n\n\`\`\`sh\nqm migrate 104 pve2 --online\n\`\`\`\n\n> Never reboot two nodes at once — quorum is three.\n`,
-      "Infrastructure/HAProxy edge.md": `# HAProxy edge\n\nTLS and HSTS end here. Backends see plain HTTP and trust \`X-Forwarded-For\` from the edge only.\n\nSee also [[Backups]].\n`,
-      "Infrastructure/Backups.md": `# Backups\n\n- [x] Nightly PBS job for all VMs\n- [x] Off-site sync, weekly\n- [ ] Restore test for the mail server\n- [ ] Document the restore order\n`,
+      "Office IT/README.md": `# Office IT\n\nHow the office kit works, and what to do when it doesn't.\n\n- [[Printers]]\n- [[Wi-Fi]]\n- [[Backups]]\n`,
+      "Office IT/Printers.md": `# Printers\n\n| Name | Where | Notes |\n|---|---|---|\n| Upstairs | by the kitchen | colour, A3 |\n| Downstairs | reception | black and white only |\n| Label | post room | 62 mm rolls |\n\nAdd a printer on Windows (PowerShell):\n\n\`\`\`powershell\nAdd-Printer -ConnectionName \\\\print01\\Upstairs\n\`\`\`\n\n> If it jams, open tray 2 first — never pull paper out from the front.\n`,
+      "Office IT/Wi-Fi.md": `# Wi-Fi\n\nStaff use **Office**, visitors use **Office-Guest**. The guest password changes on the 1st of each month — it's on the board in reception, not in here.\n\nSee also [[Printers]].\n`,
+      "Office IT/Backups.md": `# Backups\n\n- [x] Nightly backup of the shared drive\n- [x] Weekly copy kept off-site\n- [ ] Test restoring a deleted folder\n- [ ] Write down who to call if it fails\n`,
       "Onboarding/README.md": `# Onboarding\n\nFirst week for new staff. Tick things off as you go.\n`,
-      "Onboarding/Day one.md": `# Day one\n\n- [ ] Laptop handed over and enrolled\n- [ ] Forgejo account\n- [ ] Added to the notebook repo\n- [ ] Read [[House rules]]\n`,
+      "Onboarding/Day one.md": `# Day one\n\n- [ ] Laptop handed over and set up\n- [ ] GitHub or Forgejo account\n- [ ] Added to the notebook repo\n- [ ] Read [[House rules]]\n`,
       "Onboarding/House rules.md": `# House rules\n\n1. Notes are shared. Write them for the next person.\n2. One subject per folder, one topic per note.\n3. Paste screenshots straight in — they land in \`assets/\`.\n`,
       "Meetings/README.md": `# Meetings\n\nOne note per meeting, named by date.\n`,
-      "Meetings/2026-10/2026-10-21 Ops sync.md": `# Ops sync — 21 Oct\n\n**Present:** the ops team\n\n## Decisions\n- Move the matter board behind basic auth until review.\n\n## Actions\n- [x] Rotate the preview password\n- [ ] Write up the HAProxy change in [[/Infrastructure/HAProxy edge|HAProxy edge]]\n`,
+      "Meetings/2026-10/2026-10-21 Team sync.md": `# Team sync — 21 Oct\n\n**Present:** the whole team\n\n## Decisions\n- Try a shared notebook in place of OneNote for a month.\n\n## Actions\n- [x] Make the notes repository\n- [ ] Move the printer notes into [[/Office IT/Printers|Printers]]\n`,
       "Meetings/2026-10/2026-10-28 Notebook idea.md": `# Notebook idea — 28 Oct\n\nA OneNote replacement that is just a git repo:\n\n- subject = folder = tile on the front page\n- note = markdown file\n- save = commit, history for free\n- search in the browser, cache by blob sha\n`,
       "Ideas/README.md": `# Ideas\n\nHalf-formed things. No judgement.\n`,
-      "Ideas/Matter board.md": `# Matter board\n\nThe case-as-desktop prototype. Lives on the \`prototype/matter-board\` branch.\n`,
+      "Ideas/Friday lunch.md": `# Friday lunch\n\nTake turns choosing. Add yourself to the end.\n\n1. Sam — curry\n2. Priya — pizza\n3. *(you?)*\n`,
     };
     const out = {};
     for (const [p, text] of Object.entries(f)) out[p] = { text, sha: DemoStore.sha(text) };

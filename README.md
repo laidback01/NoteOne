@@ -1,6 +1,6 @@
-# Notebook — shared notes on a git repo
+# NoteOne — shared notes on a git repo
 
-A throwaway prototype of a OneNote replacement that is just a git repository
+An early prototype of a OneNote replacement that is just a git repository
 with a front page. The repository can be on **GitHub** or on **Forgejo**.
 
 - a **subject** is a top-level folder, and a tile on the front page
@@ -16,13 +16,13 @@ browser talks to GitHub or Forgejo with that person's own token.
     index.html           the whole app — edit this
     config.example.json  copy to config.json to pin the repo (see below)
     vendor/              marked 15.0.12 (markdown), DOMPurify 3.2.6 (sanitiser)
-    fonts/, fonts.css    same fonts as the matter board
+    fonts/, fonts.css    Public Sans, Source Serif 4, IBM Plex Mono (SIL OFL)
 
 No build step. Serve the folder as static files.
 
 ## Try it
 
-    python3 -m http.server -d notes 8000
+    python3 -m http.server 8000
 
 Open <http://localhost:8000>. It starts with **Just try it**: sample notes held
 in this browser, same code paths as the real thing. Settings offers three
@@ -106,8 +106,8 @@ blank.
 
     location / { root /var/www/notebook; }
     location /api/ {
-        proxy_pass https://forgejo.406dc.net;
-        proxy_set_header Host forgejo.406dc.net;
+        proxy_pass https://forgejo.example.net;
+        proxy_set_header Host forgejo.example.net;
         proxy_ssl_server_name on;
     }
 
@@ -118,7 +118,7 @@ the API.
 
     [cors]
     ENABLED = true
-    ALLOWED_DOMAINS = https://notes.406dc.net
+    ALLOWED_DOMAINS = https://notes.example.net
     HEADERS = Content-Type,User-Agent,Authorization
 
 `Authorization` is not in the default `HEADERS`, and without it every call
@@ -173,8 +173,8 @@ source of truth, and the index can always be rebuilt from the repo.
 - **GitHub**: listing, reading, raw files and missing-file handling against a
   real public repo, from a browser page. Bad-token wording. **Saving to
   GitHub has not been tried yet**: it needs a token and a test repo.
-- **Forgejo**: API shapes checked against forgejo.406dc.net's own spec
-  (v13.0.2). **No real reads or saves yet.**
+- **Forgejo**: API shapes checked against the published API spec of a
+  Forgejo 13.0.2 server. **No real reads or saves yet.**
 - **Pinning**: a pinned config ignores earlier browser settings, only ever
   talks to the pinned repo, and a broken config stops the page.
 
@@ -190,3 +190,14 @@ source of truth, and the index can always be rebuilt from the repo.
 - One editor at a time per note. Simultaneous edits get a conflict, not a
   merge.
 - Large binaries bloat the repo. If people attach lots of PDFs, use Git LFS.
+
+## License
+
+BSD 2-Clause — see [LICENSE](LICENSE).
+
+Bundled third-party files keep their own licences:
+
+- `vendor/marked.min.js` — MIT (header in the file)
+- `vendor/purify.min.js` — Apache 2.0 or MPL 2.0 (header in the file)
+- `fonts/` — SIL Open Font License 1.1, one licence file per family
+  (`fonts/OFL-*.txt`)
