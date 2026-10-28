@@ -109,8 +109,8 @@ it at; it never shows its own files.
    **Save**. After a minute or two the address appears at the top of that
    page: `https://<your-username>.github.io/NoteOne/`.
 2. **Make the notes repo.** New repository, e.g. `notes`, set to
-   **Private**, with *Add a README* ticked (an empty repo has nothing for the
-   page to list).
+   **Private**. It can start empty; the first subject you make becomes its
+   first commit.
 3. **Add people.** In the notes repo → **Settings** → **Collaborators** →
    *Add people*. Collaborators get write access, which is what they need.
 4. **Each person makes a token** (see Permissions above), opens the Pages
@@ -221,9 +221,13 @@ source of truth, and the index can always be rebuilt from the repo.
 - **Just try it** (demo): editing, saving, ticking checkboxes, the conflict
   warning, new subjects and sections, links, search, image paste, script
   sanitising, dark mode. All driven in headless Chrome.
-- **GitHub**: listing, reading, raw files and missing-file handling against a
-  real public repo, from a browser page. Bad-token wording. **Saving to
-  GitHub has not been tried yet**: it needs a token and a test repo.
+- **GitHub, end to end** against a real private repo with a fine-grained
+  token, in a browser: connecting by pasted link, the first save into an
+  empty repo, editing, ticking tasks, sections, pasting an image and showing
+  it back from the private repo, search, the History link, and sign out. A
+  conflict (someone else saved first) is refused by GitHub, warned about,
+  and leaves both versions safe. Refused writes from a read-only token are
+  explained in plain words.
 - **Forgejo**: API shapes checked against the published API spec of a
   Forgejo 13.0.2 server. **No real reads or saves yet.**
 - **Pinning**: a pinned config ignores earlier browser settings, only ever
@@ -239,8 +243,6 @@ source of truth, and the index can always be rebuilt from the repo.
   sign out when you're done. The next step is OAuth sign-in (GitHub OAuth
   app, or Forgejo OAuth2 with PKCE).
 - No rename or move yet.
-- A brand-new GitHub repo with no commits may refuse the first save. Create
-  it with a README.
 - GitHub lists at most about 100,000 files in one call; past that the page
   warns that some notes are missing.
 - One editor at a time per note. Simultaneous edits get a conflict, not a
