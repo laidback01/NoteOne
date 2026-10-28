@@ -189,6 +189,8 @@ dialog p a{color:var(--accent)}
 .choice input{width:auto;grid-row:span 2;accent-color:var(--primary)}
 .choice b{font-size:14.5px}
 .choice span{grid-column:2;font-size:12px;color:var(--ink-2)}
+dialog label.check{display:flex;gap:8px;align-items:center;margin:12px 0 0;font-size:13px;color:var(--ink);cursor:pointer}
+dialog label.check input{width:auto;accent-color:var(--primary)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 
 @media (max-width:760px){
@@ -228,9 +230,12 @@ dialog p a{color:var(--accent)}
     </fieldset>
     <div id="sRemote">
       <div id="sServer">
-        <label for="sBase" id="sBaseLabel">Address</label>
-        <input id="sBase">
-        <label for="sRepo">Repository (owner/name)</label>
+        <label class="check" id="sEntRow"><input type="checkbox" id="sEnt"> My company runs its own GitHub Enterprise server</label>
+        <div id="sBaseRow">
+          <label for="sBase" id="sBaseLabel">Address</label>
+          <input id="sBase">
+        </div>
+        <label for="sRepo">Repository — its name, like <b>team/notes</b>, or paste its link</label>
         <input id="sRepo" placeholder="team/notes">
         <label for="sBranch">Branch</label>
         <input id="sBranch" placeholder="main">
@@ -292,6 +297,23 @@ function hue(name) {
 }
 
 class Conflict extends Error {}
+
+// People paste whatever they have to hand: a browser link, a clone URL, the
+// github.com address itself. Reduce each field to what the API needs.
+function cleanBase(mode, b) {
+  b = (b || "").trim();
+  if (!b) return "";
+  if (!/^[a-z]+:\/\//i.test(b)) b = "https://" + b;
+  let u;
+  try { u = new URL(b) } catch { return b.replace(/\/+$/, "") }
+  // github.com in any form means plain GitHub, not Enterprise
+  if (mode === "github") return /(^|\.)github\.(com|io)$/i.test(u.hostname) ? "" : u.origin;
+  return (u.origin + u.pathname).replace(/\/+$/, "");
+}
+function cleanRepo(r) {
+  r = (r || "").trim().replace(/^git@[^:]+:/, "").replace(/^[a-z]+:\/\/[^/]+\//i, "").replace(/\.git$/i, "");
+  return r.split("/").filter(Boolean).slice(0, 2).join("/");
+}
 
 /* ═══ storage: Forgejo ════════════════════════════════════════════ */
 // The repo is the database: folders are subjects, .md files are notes,
@@ -489,6 +511,8 @@ let current = null;          // {path, sha, text}
 
 function makeStore() {
   if (pinned) Object.assign(cfg, pinned);
+  cfg.base = cleanBase(cfg.mode, cfg.base);
+  cfg.repo = cleanRepo(cfg.repo);
   const Remote = { github: GitHubStore, forgejo: ForgejoStore }[cfg.mode];
   store = Remote && (pinned || cfg.repo && cfg.token) ? new Remote(cfg) : new DemoStore();
   if (pinned && !cfg.token) store.label += " · not signed in";
@@ -515,7 +539,8 @@ async function refresh() {
       e.status === 404 ? `${svc} can't find ${esc(cfg.repo)}. Check the name in Settings — or, if it's private, that your token can see it.` :
       e.status ? `${svc} said no: ${esc(e.message)}` :
       cfg.mode === "forgejo" ? `Couldn't reach Forgejo. It has to be set up to allow this page (CORS), or this page has to reach it through a proxy.` :
-      `Couldn't reach ${svc}. Check the address in Settings and your connection.`);
+      cfg.base ? `Couldn't reach GitHub Enterprise at ${esc(cfg.base)}. If your notes are on github.com, open Settings and untick “My company runs its own GitHub Enterprise server”.` :
+      `Couldn't reach GitHub. Check your internet connection, and that nothing (an ad blocker, a work firewall) is blocking api.github.com.`);
     tree = [];
   }
 }
@@ -910,7 +935,7 @@ const dlg = $("#settings");
 const SERVICES = {
   github: {
     name: "GitHub",
-    base: "GitHub Enterprise address — leave blank for github.com",
+    base: "Your GitHub Enterprise address",
     placeholder: "https://github.example.com",
     help: base => `Make a <a href="${esc(base || "https://github.com")}/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>: pick only this repository, and give it <b>Contents: Read and write</b>. If the repository isn't offered, make a <a href="${esc(base || "https://github.com")}/settings/tokens/new?scopes=repo&description=NoteOne" target="_blank" rel="noopener">classic token</a> with <b>repo</b> ticked instead.`,
   },
@@ -921,22 +946,26 @@ const SERVICES = {
     help: base => `Make a token under ${base ? `<a href="${esc(base)}/user/settings/applications" target="_blank" rel="noopener">Settings → Applications</a>` : "Settings → Applications"} with <b>repository: Read and write</b>.`,
   },
 };
+const formBase = () => formMode() === "github" && !$("#sEnt").checked ? "" : cleanBase(formMode(), $("#sBase").value);
 const formMode = () => pinned ? pinned.mode : ($("input[name=mode]:checked")?.value || "demo");
 function syncSettingsForm() {
   const mode = formMode(), svc = SERVICES[mode];
   $("#sStorage").hidden = $("#sServer").hidden = !!pinned;
   $("#sRemote").hidden = !svc;
+  $("#sEntRow").hidden = mode !== "github";
+  $("#sBaseRow").hidden = mode === "github" && !$("#sEnt").checked;
   $("#sTitle").textContent = pinned ? `Sign in to ${pinned.repo} on ${svc.name}` : "Where are the notes kept?";
   if (!svc) return;
   $("#sBaseLabel").textContent = svc.base;
   $("#sBase").placeholder = svc.placeholder;
   $("#sTokenLabel").textContent = `Your ${svc.name} access token`;
-  $("#sTokenHelp").innerHTML = `${svc.help(pinned ? pinned.base : $("#sBase").value.trim())} It stays in this browser, and every save is recorded under your name.`;
+  $("#sTokenHelp").innerHTML = `${svc.help(pinned ? pinned.base : formBase())} It stays in this browser, and every save is recorded under your name.`;
 }
 function openSettings() {
   const radio = $(`input[name=mode][value="${cfg.mode}"]`);
   if (radio) radio.checked = true;
   $("#sBase").value = cfg.base; $("#sRepo").value = cfg.repo;
+  $("#sEnt").checked = cfg.mode === "github" && !!cfg.base;
   $("#sBranch").value = cfg.branch || "main"; $("#sToken").value = cfg.token;
   syncSettingsForm(); dlg.showModal();
 }
@@ -959,10 +988,11 @@ $("#signOutBtn").onclick = async () => {
 };
 $("#sStorage").onchange = syncSettingsForm;
 $("#sBase").oninput = syncSettingsForm;
+$("#sEnt").onchange = syncSettingsForm;
 dlg.addEventListener("close", async () => {
   if (dlg.returnValue !== "save") return;
   if (pinned) Object.assign(cfg, { token: $("#sToken").value.trim() });
-  else Object.assign(cfg, { mode: formMode(), base: $("#sBase").value.trim(), repo: $("#sRepo").value.trim().replace(/^\/|\/$/g, ""),
+  else Object.assign(cfg, { mode: formMode(), base: formBase(), repo: cleanRepo($("#sRepo").value),
                        branch: $("#sBranch").value.trim() || "main", token: $("#sToken").value.trim() });
   store_set("noteone.cfg", cfg);
   textCache.clear(); banner("", "");
@@ -985,7 +1015,7 @@ $("#themeBtn").onclick = () => {
     if (r.ok) {
       const c = await r.json().catch(() => ({}));
       const mode = String(c.service || "").toLowerCase();
-      if (c.repo && SERVICES[mode]) pinned = { mode, base: (c.base || "").replace(/\/$/, ""), repo: c.repo, branch: c.branch || "main" };
+      if (c.repo && SERVICES[mode]) pinned = { mode, base: cleanBase(mode, c.base), repo: cleanRepo(c.repo), branch: c.branch || "main" };
       else return $("#settingsBtn").hidden = true, banner("err", `This page's config.json needs <code>"service": "github"</code> or <code>"service": "forgejo"</code>, and a <code>"repo"</code>. Ask whoever set it up.`);
     }
   } catch {

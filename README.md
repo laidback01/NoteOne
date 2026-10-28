@@ -106,8 +106,10 @@ it at; it never shows its own files.
 3. **Add people.** In the notes repo → **Settings** → **Collaborators** →
    *Add people*. Collaborators get write access, which is what they need.
 4. **Each person makes a token** (see Permissions above), opens the Pages
-   address, clicks **Settings**, picks **GitHub**, and enters
-   `<your-username>/notes`, branch `main`, and their token.
+   address, clicks **Settings**, picks **GitHub**, leaves *My company runs
+   its own GitHub Enterprise server* unticked, and enters
+   `<your-username>/notes` (or pastes the repo's link), branch `main`, and
+   their token.
 
 `.nojekyll` in this repo tells Pages to serve the files exactly as they are.
 Nothing else needs setting up: `api.github.com` accepts calls from any web
