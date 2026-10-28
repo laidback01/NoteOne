@@ -1,0 +1,6 @@
+{
+  "service": "forgejo",
+  "base": "",
+  "repo": "owner/notes",
+  "branch": "main"
+}
