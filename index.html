@@ -189,8 +189,11 @@ dialog p a{color:var(--accent)}
 .choice input{width:auto;grid-row:span 2;accent-color:var(--primary)}
 .choice b{font-size:14.5px}
 .choice span{grid-column:2;font-size:12px;color:var(--ink-2)}
-dialog label.check{display:flex;gap:8px;align-items:center;margin:12px 0 0;font-size:13px;color:var(--ink);cursor:pointer}
-dialog label.check input{width:auto;accent-color:var(--primary)}
+dialog .hint-line{font-size:12px}
+dialog .hint-line.ok{color:var(--sage)}
+dialog .hint-line.bad{color:var(--crit)}
+dialog details{margin-top:10px;font-size:12.5px;color:var(--ink-2)}
+dialog summary{cursor:pointer}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 
 @media (max-width:760px){
@@ -230,15 +233,14 @@ dialog label.check input{width:auto;accent-color:var(--primary)}
     </fieldset>
     <div id="sRemote">
       <div id="sServer">
-        <label class="check" id="sEntRow"><input type="checkbox" id="sEnt"> My company runs its own GitHub Enterprise server</label>
-        <div id="sBaseRow">
-          <label for="sBase" id="sBaseLabel">Address</label>
-          <input id="sBase">
-        </div>
-        <label for="sRepo">Repository — its name, like <b>team/notes</b>, or paste its link</label>
-        <input id="sRepo" placeholder="team/notes">
-        <label for="sBranch">Branch</label>
-        <input id="sBranch" placeholder="main">
+        <label for="sAddr">The notes repository — paste its link</label>
+        <input id="sAddr" autocomplete="off" spellcheck="false" placeholder="https://github.com/you/notes">
+        <p id="sAddrHint" class="hint-line">Copy it from the repository's page: the address bar, or the <b>Code</b> / <b>Clone</b> button. HTTPS or SSH both work.</p>
+        <details id="sMore">
+          <summary>More options</summary>
+          <label for="sBranch">Branch — leave blank to use the repository's main one</label>
+          <input id="sBranch" autocomplete="off" spellcheck="false">
+        </details>
       </div>
       <label for="sToken" id="sTokenLabel">Access token</label>
       <input id="sToken" type="password" autocomplete="off">
@@ -298,8 +300,37 @@ function hue(name) {
 
 class Conflict extends Error {}
 
-// People paste whatever they have to hand: a browser link, a clone URL, the
-// github.com address itself. Reduce each field to what the API needs.
+// Whatever people copy from GitHub or Forgejo, reduced to server + owner/repo:
+//   https://github.com/you/notes            https://github.com/you/notes.git
+//   https://github.com/you/notes/tree/dev   git@github.com:you/notes.git
+//   ssh://git@forgejo.example.net:2222/team/notes.git
+//   https://example.net/git/team/notes/src/branch/main   (Forgejo under a subpath)
+//   team/notes                                           (no server: github.com, or a proxy)
+function parseAddress(text) {
+  const t = (text || "").trim().replace(/\s+/g, "");
+  if (!t) return null;
+  let scheme = "", host = "", port = "", path = t, m;
+  if ((m = t.match(/^[\w.-]+@([^:/]+):(?!\d+\/)(.+)$/))) [, host, path] = m, scheme = "ssh";
+  else if ((m = t.match(/^([a-z][a-z0-9+.-]*):\/\/(?:[^@/]+@)?([^/:]+)(?::(\d+))?(\/.*)?$/i))) [, scheme, host, port, path = ""] = m;
+  else if ((m = t.match(/^([\w-]+(?:\.[\w-]+)+)(?::(\d+))?(\/.*)$/)) && m[1].includes(".")) [, host, port, path] = m, scheme = "https";
+  const segs = path.split(/[?#]/)[0].split("/").filter(Boolean);
+  // the web UI's own parts start after owner/repo
+  const cut = segs.findIndex((s, i) => i >= 2 && /^(tree|blob|src|commits?|issues|pulls|wiki|settings|raw|releases|actions|-)$/.test(s));
+  let branch = "";
+  if (cut >= 0) {
+    const rest = segs.splice(cut);
+    if (/^(tree|blob)$/.test(rest[0])) branch = rest[1] || "";
+    if (rest[0] === "src" && rest[1] === "branch") branch = rest[2] || "";
+  }
+  if (segs.length < 2) return null;
+  const repo = segs.slice(-2).join("/").replace(/\.git$/i, "");
+  const sub = segs.slice(0, -2).join("/");
+  const isGitHub = /(^|\.)github\.com$/i.test(host);
+  // an SSH address names the server, but the API is always on https
+  const web = !host ? "" : `${/^http$/i.test(scheme) ? "http" : "https"}://${host}${port && /^https?$/i.test(scheme) ? ":" + port : ""}${sub ? "/" + sub : ""}`;
+  return { host, isGitHub, base: isGitHub ? "" : web, repo, branch };
+}
+// kept for values saved by earlier versions
 function cleanBase(mode, b) {
   b = (b || "").trim();
   if (!b) return "";
@@ -324,7 +355,12 @@ class ForgejoStore {
     this.base = (c.base || "").replace(/\/$/, "");
     this.api = `${this.base}/api/v1/repos/${encPath(c.repo)}`;
     this.blobs = new Map();
+    this.branch = c.branch || "";
     this.label = `Forgejo · ${c.repo}`;
+  }
+  // blank branch = the repo's own default; both services report it on the repo itself
+  async resolveBranch() {
+    if (!this.branch) this.branch = (await (await this.req("GET", "")).json()).default_branch || "main";
   }
   headers(accept = "application/json") {
     return { ...(this.c.token ? { Authorization: `token ${this.c.token}` } : {}), Accept: accept };
@@ -345,11 +381,12 @@ class ForgejoStore {
     return r.status === 204 ? null : r;
   }
   async list() {
+    await this.resolveBranch();
     const out = [];
     for (let page = 1; page < 50; page++) {
       let d;
       try {
-        d = await (await this.req("GET", `/git/trees/${encodeURIComponent(this.c.branch)}?recursive=true&per_page=10000&page=${page}`)).json();
+        d = await (await this.req("GET", `/git/trees/${encodeURIComponent(this.branch)}?recursive=true&per_page=10000&page=${page}`)).json();
       } catch (e) {
         if (e.status === 404 && page === 1) return out;  // empty repo
         throw e;
@@ -360,14 +397,14 @@ class ForgejoStore {
     return out;
   }
   async read(path) {
-    const d = await (await this.req("GET", `/contents/${encPath(path)}?ref=${encodeURIComponent(this.c.branch)}`)).json();
+    const d = await (await this.req("GET", `/contents/${encPath(path)}?ref=${encodeURIComponent(this.branch)}`)).json();
     return { text: unutf8(b64dec(d.content || "")), sha: d.sha };
   }
   async currentSha(path) {
     try { return (await this.read(path)).sha } catch (e) { if (e.status === 404) return null; throw e }
   }
   async put(path, bytes, sha, message) {
-    const body = { content: b64enc(bytes), message, branch: this.c.branch, ...(sha ? { sha } : {}) };
+    const body = { content: b64enc(bytes), message, branch: this.branch, ...(sha ? { sha } : {}) };
     try {
       const d = await (await this.req(sha ? "PUT" : this.createMethod, `/contents/${encPath(path)}`, body)).json();
       return { sha: d.content.sha };
@@ -377,13 +414,24 @@ class ForgejoStore {
         const now = await this.currentSha(path);
         if (now !== sha) throw new Conflict(path);
       }
-      throw e;
+      throw this.denied(e);
     }
+  }
+  // a refused write, said plainly; GitHub answers 404 rather than admit the repo exists
+  denied(e) {
+    if (e.status !== 403 && !(e.status === 404 && this.notFoundMeansDenied)) return e;
+    const d = new Error(this.deniedText());
+    d.status = e.status;
+    return d;
+  }
+  deniedText() {
+    return `Forgejo won't let you save to ${this.c.repo}. Ask the owner for Write access, or make a token with repository: Read and write.`;
   }
   write(path, text, sha, message) { return this.put(path, utf8(text), sha, message) }
   writeBinary(path, bytes, message) { return this.put(path, bytes, null, message) }
   async remove(path, sha, message) {
-    await this.req("DELETE", `/contents/${encPath(path)}`, { sha, message, branch: this.c.branch });
+    try { await this.req("DELETE", `/contents/${encPath(path)}`, { sha, message, branch: this.branch }) }
+    catch (e) { throw this.denied(e) }
   }
   // private repo: <img src> can't send the token, so fetch and hand back a blob: URL
   async assetUrl(path) {
@@ -393,9 +441,9 @@ class ForgejoStore {
     }
     return this.blobs.get(path);
   }
-  raw(path) { return this.req("GET", `/raw/${encPath(path)}?ref=${encodeURIComponent(this.c.branch)}`) }
+  raw(path) { return this.req("GET", `/raw/${encPath(path)}?ref=${encodeURIComponent(this.branch)}`) }
   // through a same-origin proxy only /api/ is forwarded, so there is no web UI to link to
-  historyUrl(path) { return this.base && `${this.base}/${encPath(this.c.repo)}/commits/branch/${encPath(this.c.branch)}/${encPath(path)}` }
+  historyUrl(path) { return this.base && `${this.base}/${encPath(this.c.repo)}/commits/branch/${encPath(this.branch)}/${encPath(path)}` }
 }
 ForgejoStore.prototype.createMethod = "POST";
 
@@ -416,9 +464,10 @@ class GitHubStore extends ForgejoStore {
              "X-GitHub-Api-Version": "2022-11-28" };
   }
   async list() {
+    await this.resolveBranch();
     let d;
     try {
-      d = await (await this.req("GET", `/git/trees/${encodeURIComponent(this.c.branch)}?recursive=1`)).json();
+      d = await (await this.req("GET", `/git/trees/${encodeURIComponent(this.branch)}?recursive=1`)).json();
     } catch (e) {
       if (e.status === 404 || e.status === 409) return [];  // missing branch, or a repo with no commits
       throw e;
@@ -427,15 +476,20 @@ class GitHubStore extends ForgejoStore {
     return (d.tree || []).map(t => ({ path: t.path, type: t.type, sha: t.sha }));
   }
   async read(path) {
-    const d = await (await this.req("GET", `/contents/${encPath(path)}?ref=${encodeURIComponent(this.c.branch)}`)).json();
+    const d = await (await this.req("GET", `/contents/${encPath(path)}?ref=${encodeURIComponent(this.branch)}`)).json();
     // over 1 MB GitHub leaves content out; fetch the raw bytes instead
     if (!d.content && d.size) return { text: unutf8(new Uint8Array(await (await this.raw(path)).arrayBuffer())), sha: d.sha };
     return { text: unutf8(b64dec(d.content || "")), sha: d.sha };
   }
-  raw(path) { return this.req("GET", `/contents/${encPath(path)}?ref=${encodeURIComponent(this.c.branch)}`, null, "application/vnd.github.raw") }
-  historyUrl(path) { return `${this.web}/${encPath(this.c.repo)}/commits/${encPath(this.c.branch)}/${encPath(path)}` }
+  raw(path) { return this.req("GET", `/contents/${encPath(path)}?ref=${encodeURIComponent(this.branch)}`, null, "application/vnd.github.raw") }
+  historyUrl(path) { return `${this.web}/${encPath(this.c.repo)}/commits/${encPath(this.branch)}/${encPath(path)}` }
 }
 GitHubStore.prototype.createMethod = "PUT";
+GitHubStore.prototype.notFoundMeansDenied = true;
+GitHubStore.prototype.deniedText = function () {
+  return `GitHub won't let this token save to ${this.c.repo}. It can read the notes but not change them. ` +
+    `On GitHub, edit the token: under Repository access include ${this.c.repo}, and set Contents to Read and write. Then reload this page.`;
+};
 
 /* ═══ storage: demo (localStorage) ════════════════════════════════ */
 // Same interface, so the UI can't tell the difference.
@@ -526,11 +580,16 @@ function banner(kind, msg) {
   $("#banner").innerHTML = msg ? `<div class="banner ${kind}">${msg}</div>` : "";
 }
 
+let refreshRun = 0;
 async function refresh() {
+  const run = ++refreshRun;
   try {
-    tree = await store.list();
+    const t = await store.list();
+    if (run !== refreshRun) return;
+    tree = t;
     $("#conn").classList.remove("err");
   } catch (e) {
+    if (run !== refreshRun) return;
     $("#conn").classList.add("err");
     const svc = SERVICES[cfg.mode]?.name || "the server";
     banner("err",
@@ -935,38 +994,49 @@ const dlg = $("#settings");
 const SERVICES = {
   github: {
     name: "GitHub",
-    base: "Your GitHub Enterprise address",
-    placeholder: "https://github.example.com",
+    example: "https://github.com/you/notes",
     help: base => `Make a <a href="${esc(base || "https://github.com")}/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>: pick only this repository, and give it <b>Contents: Read and write</b>. If the repository isn't offered, make a <a href="${esc(base || "https://github.com")}/settings/tokens/new?scopes=repo&description=NoteOne" target="_blank" rel="noopener">classic token</a> with <b>repo</b> ticked instead.`,
   },
   forgejo: {
     name: "Forgejo",
-    base: "Forgejo address — leave blank if this page was set up to reach it for you",
-    placeholder: "https://forgejo.example.net",
+    example: "https://forgejo.example.net/team/notes",
     help: base => `Make a token under ${base ? `<a href="${esc(base)}/user/settings/applications" target="_blank" rel="noopener">Settings → Applications</a>` : "Settings → Applications"} with <b>repository: Read and write</b>.`,
   },
 };
-const formBase = () => formMode() === "github" && !$("#sEnt").checked ? "" : cleanBase(formMode(), $("#sBase").value);
 const formMode = () => pinned ? pinned.mode : ($("input[name=mode]:checked")?.value || "demo");
+const formAddr = () => parseAddress($("#sAddr").value);
+// say back what was understood, so a wrong paste is obvious before connecting
+function describe(mode, a) {
+  const where = mode === "github"
+    ? (a.base ? `GitHub Enterprise at ${a.base}` : "GitHub")
+    : (a.base ? `Forgejo at ${a.base}` : "Forgejo, through this page's own server");
+  return `✓ ${where} · repository <b>${esc(a.repo)}</b>${a.branch ? ` · branch <b>${esc(a.branch)}</b>` : ""}`;
+}
 function syncSettingsForm() {
   const mode = formMode(), svc = SERVICES[mode];
   $("#sStorage").hidden = $("#sServer").hidden = !!pinned;
   $("#sRemote").hidden = !svc;
-  $("#sEntRow").hidden = mode !== "github";
-  $("#sBaseRow").hidden = mode === "github" && !$("#sEnt").checked;
   $("#sTitle").textContent = pinned ? `Sign in to ${pinned.repo} on ${svc.name}` : "Where are the notes kept?";
   if (!svc) return;
-  $("#sBaseLabel").textContent = svc.base;
-  $("#sBase").placeholder = svc.placeholder;
+  $("#sAddr").placeholder = svc.example;
+  const a = formAddr(), hint = $("#sAddrHint");
+  if (!pinned && $("#sAddr").value.trim()) {
+    hint.className = "hint-line " + (a ? "ok" : "bad");
+    hint.innerHTML = a ? describe(mode, a) : "That doesn't look like a repository link. Copy it from the repository's page.";
+  } else {
+    hint.className = "hint-line";
+    hint.innerHTML = `Copy it from the repository's page: the address bar, or the <b>Code</b> / <b>Clone</b> button. HTTPS or SSH both work.`;
+  }
   $("#sTokenLabel").textContent = `Your ${svc.name} access token`;
-  $("#sTokenHelp").innerHTML = `${svc.help(pinned ? pinned.base : formBase())} It stays in this browser, and every save is recorded under your name.`;
+  $("#sTokenHelp").innerHTML = `${svc.help(pinned ? pinned.base : a?.base || "")} It stays in this browser, and every save is recorded under your name.`;
 }
 function openSettings() {
   const radio = $(`input[name=mode][value="${cfg.mode}"]`);
   if (radio) radio.checked = true;
-  $("#sBase").value = cfg.base; $("#sRepo").value = cfg.repo;
-  $("#sEnt").checked = cfg.mode === "github" && !!cfg.base;
-  $("#sBranch").value = cfg.branch || "main"; $("#sToken").value = cfg.token;
+  $("#sAddr").value = !cfg.repo ? "" : cfg.base ? `${cfg.base}/${cfg.repo}` : cfg.mode === "github" ? `https://github.com/${cfg.repo}` : cfg.repo;
+  $("#sBranch").value = cfg.branch || "";
+  $("#sMore").open = !!cfg.branch;
+  $("#sToken").value = cfg.token;
   syncSettingsForm(); dlg.showModal();
 }
 $("#settingsBtn").onclick = openSettings;
@@ -987,13 +1057,22 @@ $("#signOutBtn").onclick = async () => {
   if (pinned) openSettings();
 };
 $("#sStorage").onchange = syncSettingsForm;
-$("#sBase").oninput = syncSettingsForm;
-$("#sEnt").onchange = syncSettingsForm;
+// a github.com link picks GitHub; any other server link moves off the demo to Forgejo
+$("#sAddr").oninput = () => {
+  const a = formAddr();
+  if (a?.isGitHub) $("input[name=mode][value=github]").checked = true;
+  else if (a?.host && formMode() === "demo") $("input[name=mode][value=forgejo]").checked = true;
+  if (a?.branch && !$("#sBranch").value) $("#sBranch").value = a.branch;
+  syncSettingsForm();
+};
 dlg.addEventListener("close", async () => {
   if (dlg.returnValue !== "save") return;
   if (pinned) Object.assign(cfg, { token: $("#sToken").value.trim() });
-  else Object.assign(cfg, { mode: formMode(), base: formBase(), repo: cleanRepo($("#sRepo").value),
-                       branch: $("#sBranch").value.trim() || "main", token: $("#sToken").value.trim() });
+  else {
+    const a = formAddr() || { base: "", repo: "" };
+    Object.assign(cfg, { mode: formMode(), base: a.base, repo: a.repo,
+                         branch: $("#sBranch").value.trim(), token: $("#sToken").value.trim() });
+  }
   store_set("noteone.cfg", cfg);
   textCache.clear(); banner("", "");
   makeStore(); await refresh(); go("#/"); route();
@@ -1015,7 +1094,8 @@ $("#themeBtn").onclick = () => {
     if (r.ok) {
       const c = await r.json().catch(() => ({}));
       const mode = String(c.service || "").toLowerCase();
-      if (c.repo && SERVICES[mode]) pinned = { mode, base: cleanBase(mode, c.base), repo: cleanRepo(c.repo), branch: c.branch || "main" };
+      const a = parseAddress(c.repo);
+      if (a && SERVICES[mode]) pinned = { mode, base: c.base ? cleanBase(mode, c.base) : a.base, repo: a.repo, branch: c.branch || a.branch };
       else return $("#settingsBtn").hidden = true, banner("err", `This page's config.json needs <code>"service": "github"</code> or <code>"service": "forgejo"</code>, and a <code>"repo"</code>. Ask whoever set it up.`);
     }
   } catch {

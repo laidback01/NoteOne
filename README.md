@@ -30,6 +30,13 @@ in this browser, same code paths as the real thing. Settings offers three
 separate choices: **GitHub**, **Forgejo**, or **Just try it**. Each one uses its
 own wording and its own token instructions.
 
+To connect, paste the notes repository's link exactly as GitHub or Forgejo
+gives it: the browser address, the HTTPS clone URL, or the SSH `git@…`
+address. The page works out the server and repository from it (a github.com
+link picks GitHub by itself; any other server is Forgejo, or GitHub
+Enterprise if you chose GitHub) and uses the repository's default branch
+unless *More options* names another.
+
 ## Permissions
 
 The app has no users and no access rules of its own. **The repository's
@@ -63,13 +70,14 @@ Each person makes their own token and pastes it into the page:
 Without a config, anyone can switch the page between GitHub, Forgejo and
 demo mode. For a team deployment, put a `config.json` next to `index.html`:
 
-    { "service": "github",  "repo": "owner/notes", "branch": "main" }
-    { "service": "forgejo", "base": "https://forgejo.example.net", "repo": "owner/notes", "branch": "main" }
+    { "service": "github",  "repo": "https://github.com/you/notes" }
+    { "service": "forgejo", "repo": "git@forgejo.example.net:team/notes.git" }
 
-`service` is required and must be `github` or `forgejo`. `base` is optional:
-for GitHub it is a GitHub Enterprise address (leave it out for github.com);
-for Forgejo, leave it out when the page reaches Forgejo through a proxy (see
-Hosting).
+`service` is required and must be `github` or `forgejo`. `repo` is the notes
+repository's link, copied from its page or its clone button (HTTPS or SSH),
+or just `owner/name`. `branch` is optional; without it, the repository's own
+default branch is used. For Forgejo behind a same-origin proxy (see Hosting),
+use plain `owner/name` so no server is named.
 
 With a config, the page always uses that repo. The button says "Sign in" and
 only asks for the person's token; the service, address, repo and branch can't
@@ -106,10 +114,10 @@ it at; it never shows its own files.
 3. **Add people.** In the notes repo → **Settings** → **Collaborators** →
    *Add people*. Collaborators get write access, which is what they need.
 4. **Each person makes a token** (see Permissions above), opens the Pages
-   address, clicks **Settings**, picks **GitHub**, leaves *My company runs
-   its own GitHub Enterprise server* unticked, and enters
-   `<your-username>/notes` (or pastes the repo's link), branch `main`, and
-   their token.
+   address, clicks **Settings**, pastes the notes repo's link (from the
+   address bar, or the green **Code** button — HTTPS or SSH), and pastes
+   their token. The form says back what it understood, e.g.
+   *✓ GitHub · repository you/notes*.
 
 `.nojekyll` in this repo tells Pages to serve the files exactly as they are.
 Nothing else needs setting up: `api.github.com` accepts calls from any web
