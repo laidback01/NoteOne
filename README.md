@@ -34,7 +34,7 @@ own wording and its own token instructions.
 The app has no users and no access rules of its own. **The repository's
 permissions are the permission model**, on GitHub and on Forgejo alike:
 
-| Access to the notes repo | In the notebook |
+| Access to the notes repo | In NoteOne |
 |---|---|
 | write | read, edit, create subjects and notes, attach images |
 | read | read and search; saves fail |
@@ -44,7 +44,7 @@ For an **owner and a contributor**:
 
 - **Owner** owns the notes repo.
 - **Contributor** is added as a collaborator with **Write**, not Admin.
-  Write covers everything the notebook does. Admin would also let them change
+  Write covers everything NoteOne does. Admin would also let them change
   collaborators, webhooks and repo settings. (On a GitHub personal repo,
   collaborators get write and can't be made admin, which is what you want.)
 
@@ -104,7 +104,7 @@ served. Pick one.
 Forgejo, so the browser never makes a cross-site call. Leave the address
 blank.
 
-    location / { root /var/www/notebook; }
+    location / { root /var/www/noteone; }
     location /api/ {
         proxy_pass https://forgejo.example.net;
         proxy_set_header Host forgejo.example.net;
